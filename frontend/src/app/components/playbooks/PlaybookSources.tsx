@@ -256,9 +256,24 @@ export function PlaybookSources({
             <div className="space-y-1">
               {imported && sourceButton(imported)}
               {supplementary === null ? (
-                <div aria-hidden="true" className="space-y-2 px-2 py-1.5">
-                  <SkeletonLine className="w-3/4" />
-                  <SkeletonLine className="w-1/2" />
+                <div
+                  role="status"
+                  aria-label="Loading reference documents"
+                  className="space-y-1"
+                >
+                  {["w-3/4", "w-1/2"].map((width) => (
+                    <div
+                      key={width}
+                      aria-hidden="true"
+                      className="flex h-7 min-w-0 items-center gap-2 px-2 text-gray-400"
+                    >
+                      <FileTypeIcon fileType={null} muted />
+                      <span className="min-w-0 flex-1">
+                        <SkeletonLine className={width} />
+                      </span>
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                    </div>
+                  ))}
                 </div>
               ) : (
                 others.map(sourceButton)
@@ -267,15 +282,18 @@ export function PlaybookSources({
                 <p
                   key={`${name}:${index}`}
                   role="status"
-                  className="flex min-w-0 items-start gap-2 px-2 py-1.5 text-xs text-gray-500"
+                  title={name}
+                  className="flex h-7 min-w-0 items-center gap-2 px-2 text-xs text-gray-500"
                 >
+                  <FileTypeIcon fileType={name} muted />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="sr-only">Adding </span>
+                    {name}
+                  </span>
                   <Loader2
                     aria-hidden="true"
-                    className="mt-px h-3.5 w-3.5 shrink-0 animate-spin"
+                    className="h-3.5 w-3.5 shrink-0 animate-spin text-gray-400"
                   />
-                  <span className="min-w-0 [overflow-wrap:anywhere]">
-                    Adding {name}
-                  </span>
                 </p>
               ))}
               {!imported &&
