@@ -11,8 +11,12 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { PLAYBOOK_LABEL_CLASS } from "./PlaybookField";
 import { PlaybookPanels } from "./PlaybookPanels";
+import {
+  PLAYBOOK_PANE_BODY_CLASS,
+  PLAYBOOK_PANE_HEADER_CLASS,
+  PLAYBOOK_PANE_LIST_CLASS,
+} from "./playbookPaneStyles";
 import {
   PlaybookRuleForm,
   RULE_FORM_TABS,
@@ -37,7 +41,6 @@ import type { PlaybookContent, PlaybookRule } from "@/app/lib/mikeApi";
 
 const RULE_BUTTON_CLASS =
   "grid w-full min-w-0 cursor-pointer grid-cols-[12px_minmax(0,1fr)] items-center gap-2 rounded-lg py-1.5 text-left text-xs transition-colors";
-const PANEL_HEADER_CLASS = "flex h-9 shrink-0 items-center justify-between";
 
 const RULE_DRAG_TYPE = "application/x-mike-playbook-rule";
 type ContextTarget = { topicId: string | null; ruleId?: string };
@@ -483,7 +486,7 @@ export function PlaybookEditor({
           }}
           className={`flex min-h-0 min-w-0 flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${EDITOR_SURFACE_CLASS} ${dropTarget?.topicId === null && !dropTarget.ruleId ? "ring-2 ring-inset ring-blue-500/40" : ""}`}
         >
-          <div className={`${PANEL_HEADER_CLASS} gap-2 pl-3 pr-1.5`}>
+          <div className={`${PLAYBOOK_PANE_HEADER_CLASS} justify-between`}>
             <h2 className="text-xs text-gray-700">Rules</h2>
             <div className="flex items-center gap-1">
               <HeaderActionsMenu
@@ -506,7 +509,7 @@ export function PlaybookEditor({
               </TextButtonUI>
             </div>
           </div>
-          <fieldset className="max-h-64 min-h-0 min-w-0 space-y-1 overflow-y-auto px-1 pb-1 @[48rem]:max-h-none @[48rem]:flex-1">
+          <fieldset className={`${PLAYBOOK_PANE_LIST_CLASS} space-y-1`}>
             <legend className="sr-only">Choose a rule</legend>
             {rules.length === 0 && content.topics.length === 0 && (
               <p className="px-2 py-1.5 text-xs text-gray-500">
@@ -634,14 +637,14 @@ export function PlaybookEditor({
         {selectedRule && (
           <fieldset
             disabled={disabled}
-            className="min-w-0 shrink-0 px-4 pb-2 pt-4 md:px-5 md:pt-5"
+            className={`${PLAYBOOK_PANE_HEADER_CLASS} min-w-0`}
           >
             <legend className="sr-only">Rule name and actions</legend>
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <label
                   htmlFor={ruleNameId}
-                  className={`mb-1 block px-1 ${PLAYBOOK_LABEL_CLASS}`}
+                  className="sr-only"
                 >
                   Rule
                 </label>
@@ -659,12 +662,12 @@ export function PlaybookEditor({
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.preventDefault();
                   }}
-                  className="keyboard-focus-ring block w-full min-w-0 resize-none rounded-md bg-transparent px-1 py-0.5 font-serif text-xl text-gray-900 outline-none transition-colors [field-sizing:content] [overflow-wrap:anywhere] placeholder:text-gray-400 hover:bg-app-surface-hover focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:hover:bg-transparent"
+                  className="keyboard-focus-ring block w-full min-w-0 resize-none rounded-md bg-transparent p-0 font-serif text-xl leading-7 text-gray-900 outline-none transition-colors [field-sizing:content] [overflow-wrap:anywhere] placeholder:text-gray-400 hover:bg-app-surface-hover focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:hover:bg-transparent"
                 />
               </div>
               <HeaderActionsMenu
                 title="Rule actions"
-                triggerClassName="h-6 w-6 shrink-0"
+                triggerClassName="mt-0.5 h-6 w-6 shrink-0"
                 items={menuActions({
                   topicId: selectedTopic?.id ?? null,
                   ruleId: selectedRule.id,
@@ -681,7 +684,7 @@ export function PlaybookEditor({
           <div
             role="group"
             aria-label="Rule sections"
-            className="flex shrink-0 flex-wrap gap-1.5 px-4 pb-4 md:px-5"
+            className="flex shrink-0 flex-wrap gap-1.5 px-3 pb-3"
           >
             {RULE_FORM_TABS.map((tab) => (
               <TabPillButtonUI
@@ -701,7 +704,7 @@ export function PlaybookEditor({
         <div
           ref={ruleBodyRef}
           data-slot="rule-editor-body"
-          className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 md:px-5 md:pb-5 ${selectedRule ? "" : "pt-4 md:pt-5"}`}
+          className={`flex flex-col ${PLAYBOOK_PANE_BODY_CLASS}`}
         >
           <fieldset
             disabled={disabled}
