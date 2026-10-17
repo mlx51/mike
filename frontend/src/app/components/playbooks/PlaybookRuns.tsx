@@ -214,7 +214,7 @@ export function PlaybookRuns({
           {runTitle(selected)}
         </h2>
       </div>
-      <div className={`flex min-h-0 flex-1 flex-col ${PLAYBOOK_PANE_BODY_CLASS}`}>
+      <div className="flex min-h-0 flex-1 flex-col pb-4 pt-2 md:pb-5">
         {/\.docx$/i.test(selected.documentName ?? "") ? (
           <DocxView
             key={selected.documentId}

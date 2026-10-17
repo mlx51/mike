@@ -39,7 +39,6 @@ import { PillButtonUI } from "@/shared/ui/PillButtonUI";
 import { TextButtonUI } from "@/shared/ui/TextButtonUI";
 import { PlaybookPanels } from "./PlaybookPanels";
 import {
-  PLAYBOOK_PANE_BODY_CLASS,
   PLAYBOOK_PANE_EMPTY_CLASS,
   PLAYBOOK_PANE_HEADER_CLASS,
   PLAYBOOK_PANE_LIST_CLASS,
@@ -343,7 +342,7 @@ export function PlaybookSources({
           </div>
         )}
         {selected ? (
-          <div className={`flex min-h-0 flex-1 flex-col ${PLAYBOOK_PANE_BODY_CLASS}`}>
+          <div className="flex min-h-0 flex-1 flex-col pb-4 pt-2 md:pb-5">
             {selected.fileType === "pdf" ? (
               <PdfView
                 key={selected.id}
