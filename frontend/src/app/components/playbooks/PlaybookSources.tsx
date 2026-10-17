@@ -38,6 +38,12 @@ import {
 import { PillButtonUI } from "@/shared/ui/PillButtonUI";
 import { TextButtonUI } from "@/shared/ui/TextButtonUI";
 import { PlaybookPanels } from "./PlaybookPanels";
+import {
+  PLAYBOOK_PANE_BODY_CLASS,
+  PLAYBOOK_PANE_EMPTY_CLASS,
+  PLAYBOOK_PANE_HEADER_CLASS,
+  PLAYBOOK_PANE_LIST_CLASS,
+} from "./playbookPaneStyles";
 
 const IMPORTED_ID = "imported";
 const ACCEPT =
@@ -224,14 +230,14 @@ export function PlaybookSources({
           aria-label="Reference documents"
           className={`flex min-h-0 min-w-0 flex-col ${EDITOR_SURFACE_CLASS}`}
         >
-          <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-4 md:px-5 md:pt-5">
+          <div className={`flex items-center justify-between gap-2 ${PLAYBOOK_PANE_HEADER_CLASS}`}>
             <h2 className="text-sm font-medium text-gray-900">References</h2>
             {canEdit && (
               <Dropdown>
                 <DropdownTrigger asChild>
                   <TextButtonUI
                     size="icon-xs"
-                    className="h-6"
+                    className="-my-0.5 h-6"
                     aria-label="Add reference document"
                     title="Add reference document"
                   >
@@ -252,7 +258,7 @@ export function PlaybookSources({
             )}
           </div>
           {/* One list: the Word file it was imported from, then the rest. */}
-          <div className="max-h-64 min-h-0 overflow-y-auto px-2 pb-4 md:px-3 md:pb-5 @[48rem]:max-h-none @[48rem]:flex-1">
+          <div className={`max-h-64 min-h-0 overflow-y-auto @[48rem]:max-h-none @[48rem]:flex-1 ${PLAYBOOK_PANE_LIST_CLASS}`}>
             <div className="space-y-1">
               {imported && sourceButton(imported)}
               {supplementary === null ? (
@@ -326,7 +332,7 @@ export function PlaybookSources({
         className={`flex min-h-[24rem] min-w-0 flex-col overflow-hidden @[48rem]:min-h-0 ${EDITOR_SURFACE_CLASS}`}
       >
         {selected && (
-          <div className="flex h-11 shrink-0 items-center gap-2 px-4">
+          <div className={`flex items-center gap-2 ${PLAYBOOK_PANE_HEADER_CLASS}`}>
             <FileTypeIcon fileType={selected.filename} className="h-4 w-4" />
             <h2
               className="min-w-0 truncate text-sm font-medium text-gray-900"
@@ -336,55 +342,59 @@ export function PlaybookSources({
             </h2>
           </div>
         )}
-        {selected?.fileType === "pdf" ? (
-          <PdfView
-            key={selected.id}
-            doc={{ document_id: `playbook-source:${selected.id}` }}
-            displayUrl={selected.url}
-            // Sits under the title row; the panel clips its outer corners.
-            rounded={false}
-          />
-        ) : selected ? (
-          <DocxView
-            key={`${selected.id}:${revision}`}
-            documentId={`playbook-source:${playbookId}:${selected.id}`}
-            displayUrl={selected.url}
-            refetchKey={selected.id === IMPORTED_ID ? revision : undefined}
-            filename={selected.filename}
-            canEdit={false}
-            defaultMode="view"
-            // A read-only source: no EigenPal editing toolbar.
-            toolbarVisible={false}
-            // Sits under the title row; the panel clips its outer corners.
-            rounded={false}
-          />
+        {selected ? (
+          <div className={`flex min-h-0 flex-1 flex-col ${PLAYBOOK_PANE_BODY_CLASS}`}>
+            {selected.fileType === "pdf" ? (
+              <PdfView
+                key={selected.id}
+                doc={{ document_id: `playbook-source:${selected.id}` }}
+                displayUrl={selected.url}
+                rounded={false}
+              />
+            ) : (
+              <DocxView
+                key={`${selected.id}:${revision}`}
+                documentId={`playbook-source:${playbookId}:${selected.id}`}
+                displayUrl={selected.url}
+                refetchKey={selected.id === IMPORTED_ID ? revision : undefined}
+                filename={selected.filename}
+                canEdit={false}
+                defaultMode="view"
+                // A read-only source: no EigenPal editing toolbar.
+                toolbarVisible={false}
+                rounded={false}
+              />
+            )}
+          </div>
         ) : (
-          <EmptyState
-            title="No reference documents"
-            description={
-              canEdit
-                ? "Add documents the rules can refer to, such as policies or templates."
-                : "This playbook has no reference documents."
-            }
-            action={
-              canEdit && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <PillButtonUI
-                    tone="black"
-                    onClick={() => fileInput.current?.click()}
-                  >
-                    <Upload aria-hidden="true" className="h-3.5 w-3.5" />
-                    Upload a file
-                  </PillButtonUI>
-                  <PillButtonUI tone="white" onClick={() => setPickerOpen(true)}>
-                    <Cloud aria-hidden="true" className="h-3.5 w-3.5" />
-                    Choose from documents
-                  </PillButtonUI>
-                </div>
-              )
-            }
-            className="m-auto w-fit max-w-full px-4 py-12"
-          />
+          <div className={`flex min-h-0 flex-1 items-center justify-center ${PLAYBOOK_PANE_EMPTY_CLASS}`}>
+            <EmptyState
+              title="No reference documents"
+              description={
+                canEdit
+                  ? "Add documents the rules can refer to, such as policies or templates."
+                  : "This playbook has no reference documents."
+              }
+              action={
+                canEdit && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <PillButtonUI
+                      tone="black"
+                      onClick={() => fileInput.current?.click()}
+                    >
+                      <Upload aria-hidden="true" className="h-3.5 w-3.5" />
+                      Upload a file
+                    </PillButtonUI>
+                    <PillButtonUI tone="white" onClick={() => setPickerOpen(true)}>
+                      <Cloud aria-hidden="true" className="h-3.5 w-3.5" />
+                      Choose from documents
+                    </PillButtonUI>
+                  </div>
+                )
+              }
+              className="w-fit max-w-full py-12"
+            />
+          </div>
         )}
       </section>
       {canEdit && (
