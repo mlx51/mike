@@ -32,11 +32,6 @@ import { modelDisplayName } from "@/shared/lib/modelCatalog";
 import { PillButtonUI } from "@/shared/ui/PillButtonUI";
 import { TextSlabUI } from "@/shared/ui/TextSlabUI";
 import { PlaybookPanels } from "./PlaybookPanels";
-import {
-  PLAYBOOK_PANE_BODY_CLASS,
-  PLAYBOOK_PANE_HEADER_CLASS,
-  PLAYBOOK_PANE_LIST_CLASS,
-} from "./playbookPaneStyles";
 
 const STATUS_LABEL: Record<string, string> = {
   unacceptable: "Unacceptable",
@@ -201,7 +196,7 @@ export function PlaybookRuns({
       aria-label="Reviewed document"
       className={`flex min-h-[24rem] min-w-0 flex-col overflow-hidden @[41rem]/run-layout:min-h-0 ${EDITOR_SURFACE_CLASS}`}
     >
-      <div className={PLAYBOOK_PANE_HEADER_CLASS}>
+      <div className="flex h-11 shrink-0 items-center gap-2 px-4">
         <FileTypeIcon
           fileType={selected.documentName ?? ""}
           className="h-4 w-4"
@@ -241,7 +236,7 @@ export function PlaybookRuns({
     >
       {selected ? (
         <>
-          <div className={PLAYBOOK_PANE_HEADER_CLASS}>
+          <div className="flex shrink-0 items-baseline gap-3 px-4 pb-2 pt-4 md:px-5 md:pt-5">
             <h2
               className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900"
               title={runTitle(selected)}
@@ -255,7 +250,7 @@ export function PlaybookRuns({
               {formatDateTime(selected.startedAt)}
             </time>
           </div>
-          <div className={PLAYBOOK_PANE_BODY_CLASS}>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 md:px-5 md:pb-5">
             <RunResults
               run={selected}
               resolved={resolved}
@@ -281,7 +276,7 @@ export function PlaybookRuns({
                 </PillButtonUI>
               )
             }
-            className="m-auto w-fit max-w-full px-3 py-12"
+            className="m-auto w-fit max-w-full px-4 py-12"
           />
         )
       )}
@@ -296,11 +291,11 @@ export function PlaybookRuns({
           aria-label="Your runs"
           className={`flex min-h-0 min-w-0 flex-col ${EDITOR_SURFACE_CLASS}`}
         >
-          <div className={PLAYBOOK_PANE_HEADER_CLASS}>
+          <div className="flex shrink-0 items-center px-4 pb-2 pt-4 md:px-5 md:pt-5">
             {/* Runs are listed per person: another member's are not shown. */}
-            <h2 className="text-xs text-gray-700">Your runs</h2>
+            <h2 className="text-sm font-medium text-gray-900">Your runs</h2>
           </div>
-          <div className={`${PLAYBOOK_PANE_LIST_CLASS} space-y-1`}>
+          <div className="max-h-64 min-h-0 space-y-1 overflow-y-auto px-2 pb-4 md:px-3 md:pb-5 @[48rem]:max-h-none @[48rem]:flex-1">
             {all === null ? (
               <div aria-hidden="true" className="space-y-3 px-2 py-1.5">
                 {["w-3/4", "w-1/2", "w-2/3"].map((width) => (

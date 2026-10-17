@@ -3,11 +3,6 @@
 import { SkeletonLine } from "@/app/components/shared/TablePrimitive";
 import { TableToolbar } from "@/app/components/shared/TableToolbar";
 import { EDITOR_SURFACE_CLASS } from "@/app/components/ui/liquid-surface";
-import {
-  PLAYBOOK_PANE_BODY_CLASS,
-  PLAYBOOK_PANE_HEADER_CLASS,
-  PLAYBOOK_PANE_LIST_CLASS,
-} from "./playbookPaneStyles";
 
 function PillSkeleton({ className }: { className: string }) {
   return (
@@ -50,36 +45,35 @@ export function PlaybookPageSkeleton() {
           <section
             className={`flex min-h-0 min-w-0 flex-col ${EDITOR_SURFACE_CLASS}`}
           >
-            <div className={PLAYBOOK_PANE_HEADER_CLASS}>
-              <SkeletonLine className="w-10" />
-            </div>
-            <div className={PLAYBOOK_PANE_LIST_CLASS}>
-              <div className="space-y-4 px-2 py-1.5">
-                {["w-3/4", "w-1/2", "w-2/3", "w-3/5"].map((width) => (
-                  <SkeletonLine key={width} className={width} />
-                ))}
+            <div className="flex shrink-0 items-center px-4 pb-2 pt-4 md:px-5 md:pt-5">
+              <div className="flex h-6 items-center">
+                <SkeletonLine className="w-12" />
               </div>
+            </div>
+            <div className="space-y-3 px-4 pb-4 pt-1 md:px-5 md:pb-5">
+              {["w-3/4", "w-1/2", "w-2/3", "w-3/5"].map((width) => (
+                <SkeletonLine key={width} className={width} />
+              ))}
             </div>
           </section>
           <section
-            className={`flex min-h-[24rem] min-w-0 flex-col overflow-hidden @[48rem]:min-h-0 ${EDITOR_SURFACE_CLASS}`}
+            className={`min-h-[24rem] min-w-0 space-y-5 px-4 pb-4 pt-4 md:px-5 md:pt-5 @[48rem]:min-h-0 ${EDITOR_SURFACE_CLASS}`}
           >
-            <div className={PLAYBOOK_PANE_HEADER_CLASS}>
+            <div className="space-y-2">
+              <SkeletonLine className="w-10" />
               <div className="h-7 w-2/5 rounded-md bg-gray-100 animate-pulse" />
             </div>
-            <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+            <div className="flex gap-1.5">
               <PillSkeleton className="w-20" />
               <PillSkeleton className="w-20" />
               <PillSkeleton className="w-24" />
             </div>
-            <div className={`${PLAYBOOK_PANE_BODY_CLASS} space-y-4`}>
-              {[0, 1].map((index) => (
-                <div key={index} className="space-y-2">
-                  <SkeletonLine className="w-24" />
-                  <div className="h-20 rounded-lg bg-gray-100 animate-pulse" />
-                </div>
-              ))}
-            </div>
+            {[0, 1].map((index) => (
+              <div key={index} className="space-y-2">
+                <SkeletonLine className="w-24" />
+                <div className="h-20 rounded-lg bg-gray-100 animate-pulse" />
+              </div>
+            ))}
           </section>
         </div>
       </div>

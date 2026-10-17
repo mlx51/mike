@@ -38,10 +38,6 @@ import {
 import { PillButtonUI } from "@/shared/ui/PillButtonUI";
 import { TextButtonUI } from "@/shared/ui/TextButtonUI";
 import { PlaybookPanels } from "./PlaybookPanels";
-import {
-  PLAYBOOK_PANE_HEADER_CLASS,
-  PLAYBOOK_PANE_LIST_CLASS,
-} from "./playbookPaneStyles";
 
 const IMPORTED_ID = "imported";
 const ACCEPT =
@@ -228,8 +224,8 @@ export function PlaybookSources({
           aria-label="Reference documents"
           className={`flex min-h-0 min-w-0 flex-col ${EDITOR_SURFACE_CLASS}`}
         >
-          <div className={`${PLAYBOOK_PANE_HEADER_CLASS} justify-between`}>
-            <h2 className="text-xs text-gray-700">References</h2>
+          <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-4 md:px-5 md:pt-5">
+            <h2 className="text-sm font-medium text-gray-900">References</h2>
             {canEdit && (
               <Dropdown>
                 <DropdownTrigger asChild>
@@ -256,7 +252,7 @@ export function PlaybookSources({
             )}
           </div>
           {/* One list: the Word file it was imported from, then the rest. */}
-          <div className={PLAYBOOK_PANE_LIST_CLASS}>
+          <div className="max-h-64 min-h-0 overflow-y-auto px-2 pb-4 md:px-3 md:pb-5 @[48rem]:max-h-none @[48rem]:flex-1">
             <div className="space-y-1">
               {imported && sourceButton(imported)}
               {supplementary === null ? (
@@ -312,7 +308,7 @@ export function PlaybookSources({
         className={`flex min-h-[24rem] min-w-0 flex-col overflow-hidden @[48rem]:min-h-0 ${EDITOR_SURFACE_CLASS}`}
       >
         {selected && (
-          <div className={PLAYBOOK_PANE_HEADER_CLASS}>
+          <div className="flex h-11 shrink-0 items-center gap-2 px-4">
             <FileTypeIcon fileType={selected.filename} className="h-4 w-4" />
             <h2
               className="min-w-0 truncate text-sm font-medium text-gray-900"
@@ -369,7 +365,7 @@ export function PlaybookSources({
                 </div>
               )
             }
-            className="m-auto w-fit max-w-full px-3 py-12"
+            className="m-auto w-fit max-w-full px-4 py-12"
           />
         )}
       </section>

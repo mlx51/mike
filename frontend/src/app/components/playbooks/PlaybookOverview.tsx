@@ -7,10 +7,6 @@ import { EDITOR_SURFACE_CLASS } from "@/app/components/ui/liquid-surface";
 import type { Playbook } from "@/app/lib/mikeApi";
 import { modelDisplayName } from "@/shared/lib/modelCatalog";
 import { PlaybookPanels } from "./PlaybookPanels";
-import {
-  PLAYBOOK_PANE_BODY_CLASS,
-  PLAYBOOK_PANE_HEADER_CLASS,
-} from "./playbookPaneStyles";
 import { accessScope } from "./PlaybookTable";
 
 function formatDateTime(iso: string) {
@@ -106,10 +102,10 @@ export function PlaybookOverview({
           aria-label="Playbook information"
           className={`flex min-h-0 min-w-0 flex-col ${EDITOR_SURFACE_CLASS}`}
         >
-          <div className={PLAYBOOK_PANE_HEADER_CLASS}>
-            <h2 className="text-xs text-gray-700">Details</h2>
+          <div className="flex shrink-0 items-center px-4 pb-2 pt-4 md:px-5 md:pt-5">
+            <h2 className="text-sm font-medium text-gray-900">Details</h2>
           </div>
-          <dl className={`${PLAYBOOK_PANE_BODY_CLASS} space-y-3`}>
+          <dl className="min-h-0 space-y-3 overflow-y-auto px-4 pb-4 pt-2 md:px-5 md:pb-5">
             {facts.map((fact) => (
               <div key={fact.label} className="min-w-0">
                 <dt className="text-xs text-gray-500">{fact.label}</dt>
@@ -126,12 +122,13 @@ export function PlaybookOverview({
         aria-labelledby={headingId}
         className={`@container flex min-h-0 min-w-0 flex-col overflow-hidden ${EDITOR_SURFACE_CLASS}`}
       >
-        <div className={PLAYBOOK_PANE_HEADER_CLASS}>
+        {/* Spaced like the rule pane's header so the views line up. */}
+        <div className="shrink-0 px-4 pb-2 pt-4 md:px-5 md:pt-5">
           <h2 id={headingId} className="text-sm font-medium text-gray-900">
             Overview
           </h2>
         </div>
-        <div className={`${PLAYBOOK_PANE_BODY_CLASS} space-y-6`}>
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-4 pt-2 md:px-5 md:pb-5">
           {children}
         </div>
       </section>
