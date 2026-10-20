@@ -57,6 +57,15 @@ open only to the people it is shared with. Sharing sends no email
 notification. Unlike projects and workflows, an organization's owners do not
 take over a private playbook whose creator has left.
 
+When a creator deletes their account, each of their public organization
+playbooks passes to an owner of that organization (the successor that receives
+the rest of their organization work), with its runs by other members and its
+files. Their private and personal playbooks, the reviews and imports they ran,
+and shares addressed to them are deleted with the account. The account export
+in **Settings > Privacy & Data** includes the playbooks they created and can
+still open, the reviews they ran on playbooks they can still open, the
+supplementary documents' details, and their import records.
+
 The editor has two flat glass panels: rules on the left, and the selected
 rule's form on the right. The rules sidebar uses the IDE Explorer's compact
 rows, with a small dot before each rule name. Opening a playbook selects its first rule.
@@ -193,7 +202,9 @@ playbook can open it, and later edits to the original do not change it. Its
 text is extracted when it is added. Files are stored under
 `playbooks/<creator>/<playbook>/sources/`. Database triggers queue durable file
 cleanup on replacement or deletion, including account and organization
-cascades; failed storage deletions are retried by the job worker.
+cascades; failed storage deletions are retried by the job worker. Account
+deletion also sweeps `playbooks/<user>/` for files no remaining playbook
+claims, such as staged uploads an interrupted import never read.
 
 Reviews do not receive supplementary text by default. When a playbook has
 supplementary documents, the review prompt lists their ids, names, and

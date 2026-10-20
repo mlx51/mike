@@ -66,3 +66,10 @@ export {
   revokePlaybookShare,
   type PlaybookShare,
 } from "./playbooks.sharing";
+
+// Access resolution shared with account export, which must see playbooks
+// through the same readability rule as the list.
+export {
+  resolvePlaybookRoles,
+  type PlaybookAccessRow,
+} from "./playbooks.access";
