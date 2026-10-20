@@ -1,7 +1,5 @@
-import {
-  isPlaybookIdShaped,
-  wordChatHasWorkspaceAttachments,
-} from "../../lib/wordWorkspace";
+import { isUuid } from "../../lib/uuid";
+import { wordChatHasWorkspaceAttachments } from "../../lib/wordWorkspace";
 // Business logic + data-access for the word-chat module.
 //
 // Service layer behind wordChat.routes.ts. Every function takes an explicit
@@ -86,7 +84,8 @@ async function attachedPlaybookError(
 ): Promise<{ status: number; detail: string } | null> {
   if (!playbook) return null;
   const notFound = { status: 404, detail: "Playbook not found." };
-  if (!isPlaybookIdShaped(playbook.id)) return notFound;
+  // Playbook ids are uuids; anything else names no playbook and is never queried.
+  if (!isUuid(playbook.id)) return notFound;
   try {
     await getPlaybook(userId, playbook.id, db, userEmail);
     return null;

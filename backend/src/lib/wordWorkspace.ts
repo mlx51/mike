@@ -1,15 +1,8 @@
 import type { Db } from "./supabase";
 import { findDocumentsOutsideWorkspace } from "./documentWorkspace";
 import { teamOrgIdsAmong } from "./personalOrgs";
+import { isUuid } from "./uuid";
 import { catalogKeyFromWorkflowId } from "./workflowCatalog";
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Playbook ids are UUIDs; anything else names no playbook and is never queried. */
-export function isPlaybookIdShaped(id: string): boolean {
-  return UUID_PATTERN.test(id);
-}
 
 type WordAttachments = {
   files?: { document_id?: string | null }[] | null;
@@ -39,7 +32,7 @@ export async function wordChatHasWorkspaceAttachments(
     return id && catalogKeyFromWorkflowId(id) === null ? [id] : [];
   }))];
   const playbookIds = [...new Set(attachments.flatMap(message =>
-    message.playbook?.id && isPlaybookIdShaped(message.playbook.id) ? [message.playbook.id] : [],
+    message.playbook?.id && isUuid(message.playbook.id) ? [message.playbook.id] : [],
   ))];
   const orgIds: (string | null | undefined)[] = [];
   if (workflowIds.length) {
