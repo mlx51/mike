@@ -144,7 +144,7 @@ however many users hit it.
   kinds, claim/tick/retention failures, BullMQ conversion/extraction/delivery
   failures, upload-session processing and conversion failures, worker
   heartbeat and loop failures, and the maintenance sweeps.
-- Playbook reviews and imports (`component=playbooks`, grouped by `stage`:
+- Playbook reviews and imports (`component=playbooks`, split by `stage`:
   `import.read` … `import.save`, `review.model`, `review.apply_edits`,
   `review.save`, `heartbeat`, the `*.record` writes of a failure, staged
   upload cleanup, and `job.terminal` for an in-process job with the runner

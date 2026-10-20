@@ -78,8 +78,9 @@ function defaultLevel(error: unknown): ReportLevel {
 }
 
 /**
- * Report one playbook failure, grouped by stage so a broken stage is one
- * issue. Log it afterwards with console.warn and safeError(): console.error
+ * Report one playbook failure, tagged with its stage: the outbound privacy
+ * filter (lib/observability/sentryPrivacy.ts) groups by code location split
+ * by component and stage, so a broken stage is one issue. Log it afterwards with console.warn and safeError(): console.error
  * would reach Sentry a second time through the console bridge (which only
  * recognises the reported object itself), and safeError keeps provider and
  * database text out of the server log.
@@ -107,6 +108,5 @@ export function reportPlaybookFailure(
       file_type: context.fileType ?? undefined,
     },
     extra,
-    fingerprint: ["playbooks", context.stage],
   });
 }
