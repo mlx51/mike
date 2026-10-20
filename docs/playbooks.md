@@ -167,6 +167,10 @@ Open the playbook's actions menu, then **Replace from file**. The compiled
 result rewrites that playbook's content and keeps its name unless you supply a
 new one.
 
+The playbook is read-only while the replacement compiles, even after you close
+the dialog or reload the page, so an edit cannot overwrite the new rules or be
+lost under them; editing resumes when the replacement finishes or fails.
+
 A replacement rewrites the current rules. Completed and in-progress reviews
 retain the rules they started with. The replaced file is removed once the
 new content is stored, and the same rate limit and ownership checks apply as
