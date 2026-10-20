@@ -25,6 +25,7 @@ vi.mock("../../../lib/storage", async (original) => ({
 import { DbJobDeferredError, type DbJob } from "../../../lib/dbq/types";
 import {
   blankPlaybookContent,
+  compilePlaybookImport,
   INTERRUPTED_IMPORT_ERROR,
   INTERRUPTED_RUN_ERROR,
   PLAYBOOK_EDITED_DURING_REPLACEMENT_ERROR,
@@ -429,6 +430,19 @@ describe("the playbook.import job", () => {
         detail: { import_id: "imp-1", playbook_id: "book" },
       }),
     ]);
+    expect(audited("playbook.imported")).toEqual([]);
+  });
+
+  it("records nothing when another claim finished the attempt first", async () => {
+    // Two claims of one import: the other one completed the row after this
+    // one checked it, so this one's outcome write matches nothing.
+    const { db, tables } = database([]);
+    tables.playbook_imports = [importRow({ status: "completed" })];
+    storage.downloadFile.mockResolvedValue(await sourceDocx());
+    completeText.mockResolvedValue(compiled("Standards"));
+
+    await compilePlaybookImport(db, importPayload, Buffer.from(await sourceDocx()));
+
     expect(audited("playbook.imported")).toEqual([]);
   });
 

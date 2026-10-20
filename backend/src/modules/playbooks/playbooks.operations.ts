@@ -59,7 +59,7 @@ import {
   type PlaybookSourceRow,
 } from "./playbooks.sourceStore";
 import {
-  auditedPlaybookImport,
+  recordPlaybookImportAudit,
   recordPlaybookAudit,
   recordPlaybookRunAudit,
   recordPlaybookRunDeletedAudit,
@@ -643,12 +643,13 @@ async function availablePlaybookModels(
   };
 }
 
+/** Whether this write landed: false once another claim finished the attempt. */
 async function updateImportAttempt(
   db: Db,
   attemptId: string,
   values: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await db
+): Promise<boolean> {
+  const { data, error } = await db
     .from("playbook_imports")
     .update({
       ...values,
@@ -656,8 +657,10 @@ async function updateImportAttempt(
     })
     .eq("id", attemptId)
     // Only while it runs: a finished attempt's outcome is final.
-    .eq("status", "running");
+    .eq("status", "running")
+    .select("id");
   if (error) throw error;
+  return Boolean((data as unknown[] | null)?.length);
 }
 
 /** Playbooks are prose; anything this large is not one. */
@@ -1330,7 +1333,12 @@ async function recordImportFailure(
   attemptId: string,
   stage: PlaybookImportStage,
   error: unknown,
-  source: { filename: string; playbookId: string | null },
+  source: {
+    filename: string;
+    playbookId: string | null;
+    /** The compile that failed, audited only by the claim whose write lands. */
+    work?: PlaybookImportWork;
+  },
 ): Promise<PlaybookImportError> {
   const report = {
     jobKind: "playbook.import" as const,
@@ -1347,8 +1355,9 @@ async function recordImportFailure(
     error: safeError(error),
   });
   const message = playbookImportFailureMessage(stage, error);
+  let recorded = false;
   try {
-    await updateImportAttempt(db, attemptId, {
+    recorded = await updateImportAttempt(db, attemptId, {
       status: "failed",
       stage,
       error: message,
@@ -1361,6 +1370,8 @@ async function recordImportFailure(
       error: safeError(recordError),
     });
   }
+  if (recorded && source.work)
+    await recordPlaybookImportAudit(db, source.work, { failedStage: stage });
   return new PlaybookImportError(
     `Playbook import failed during ${importStageLabel(stage)}: ${message}`,
     attemptId,
@@ -1672,18 +1683,22 @@ export async function compilePlaybookImport(
     // Not swallowed: an attempt left running after its playbook was saved
     // would read as interrupted, so a failed write here fails the run, and a
     // queued import runs again and lands on the unique-violation branch.
-    await updateImportAttempt(db, attemptId, {
+    const recorded = await updateImportAttempt(db, attemptId, {
       status: "completed",
       stage,
       playbook_id: id,
       completed_at: new Date().toISOString(),
     });
-    return getPlaybook(userId, id, db, work.userEmail);
+    const playbook = await getPlaybook(userId, id, db, work.userEmail);
+    // Only the claim whose write landed records the import in the audit log.
+    if (recorded) await recordPlaybookImportAudit(db, work, { playbook });
+    return playbook;
   } catch (error) {
     if (uploadedStorageKey) await deleteFile(uploadedStorageKey).catch(() => {});
     throw await recordImportFailure(db, attemptId, stage, error, {
       filename: work.filename,
       playbookId: work.replacePlaybookId,
+      work,
     });
   } finally {
     stopHeartbeat();
@@ -1726,11 +1741,7 @@ export async function startPlaybookImport(
   });
   return {
     attempt,
-    done: auditedPlaybookImport(
-      db,
-      work,
-      compilePlaybookImport(db, work, args.buffer, args.dependencies),
-    ),
+    done: compilePlaybookImport(db, work, args.buffer, args.dependencies),
   };
 }
 

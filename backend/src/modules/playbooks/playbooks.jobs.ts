@@ -42,7 +42,6 @@ import {
 import { isStagedPlaybookImportKey } from "./playbooks.staging";
 import { reportPlaybookFailure, type PlaybookJobKind } from "./playbooks.reporting";
 import {
-  auditedPlaybookImport,
   recordPlaybookImportAudit,
   recordPlaybookRunAudit,
 } from "./playbooks.audit";
@@ -236,12 +235,8 @@ export async function handlePlaybookImport(db: Db, job: DbJob): Promise<void> {
   const payload = job.payload as unknown as PlaybookImportJobPayload;
   const row = await claimRow(db, "playbook_imports", payload.attemptId, job);
   if (row)
-    await untilRecorded(db, "playbook_imports", payload.attemptId, async () =>
-      auditedPlaybookImport(
-        db,
-        payload,
-        compilePlaybookImport(db, payload, () => readImportFile(db, payload)),
-      ),
+    await untilRecorded(db, "playbook_imports", payload.attemptId, () =>
+      compilePlaybookImport(db, payload, () => readImportFile(db, payload)),
     );
   // Reached only once the attempt has an outcome; a retry still needs the file.
   await clearStagedImport(payload);

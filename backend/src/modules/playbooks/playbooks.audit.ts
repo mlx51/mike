@@ -148,34 +148,3 @@ export async function recordPlaybookImportAudit(
     },
   });
 }
-
-/** The stage an import failure carries (PlaybookImportError.stage), if any. */
-function failedImportStage(error: unknown): string | null {
-  const stage =
-    error && typeof error === "object"
-      ? (error as { stage?: unknown }).stage
-      : undefined;
-  return typeof stage === "string" ? stage : null;
-}
-
-/**
- * Audit an import once its compile settles, passing the outcome through
- * unchanged. Shared by the job and the in-process import.
- */
-export async function auditedPlaybookImport(
-  db: Db,
-  work: PlaybookImportWork,
-  compile: Promise<Playbook>,
-): Promise<Playbook> {
-  let playbook: Playbook;
-  try {
-    playbook = await compile;
-  } catch (error) {
-    await recordPlaybookImportAudit(db, work, {
-      failedStage: failedImportStage(error),
-    });
-    throw error;
-  }
-  await recordPlaybookImportAudit(db, work, { playbook });
-  return playbook;
-}
