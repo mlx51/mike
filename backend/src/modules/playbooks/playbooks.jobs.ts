@@ -336,6 +336,7 @@ export async function queuePlaybookReview(args: PlaybookReviewRequest) {
   const { run, work } = await beginPlaybookReview({ ...args, db });
   const input: PlaybookReviewInput = {
     runId: work.runId,
+    userId: work.userId,
     documentText: work.documentText,
     instructions: work.instructions,
     userEmail: work.userEmail,

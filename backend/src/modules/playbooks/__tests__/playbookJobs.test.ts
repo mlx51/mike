@@ -160,6 +160,8 @@ describe("queueing a playbook review", () => {
         dedupe_key: `playbook.review:${run.id}`,
         payload: expect.objectContaining({
           runId: run.id,
+          // What account erasure purges queued jobs by.
+          userId: "owner",
           documentText: "Contract",
         }),
       }),
@@ -242,6 +244,22 @@ describe("the playbook.review job", () => {
     expect(JSON.stringify(recordAudit.mock.calls)).not.toContain(
       "Uncapped liability",
     );
+  });
+
+  it("fails the run when the user lost access to the playbook while the job waited", async () => {
+    const { db, tables } = database([book({ user_id: "someone-else" })]);
+    tables.playbook_runs.push(runRow());
+
+    await handlePlaybookReview(db, job("playbook.review", reviewPayload));
+
+    expect(completeText).not.toHaveBeenCalled();
+    expect(tables.playbook_runs[0]).toMatchObject({
+      status: "failed",
+      error: "Playbook not found.",
+    });
+    expect(audited("playbook.run")).toEqual([
+      expect.objectContaining({ status: "failed" }),
+    ]);
   });
 
   it("does nothing for a run that already finished", async () => {

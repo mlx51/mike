@@ -2234,6 +2234,8 @@ export type PlaybookReviewRequest = {
  */
 export type PlaybookReviewInput = {
   runId: string;
+  /** Also what account erasure purges queued jobs by (payload.userId). */
+  userId: string;
   documentText: string;
   instructions: string | null;
   userEmail: string | null;
@@ -2242,7 +2244,6 @@ export type PlaybookReviewInput = {
 
 /** A review as runPlaybookReview performs it: its row plus its input. */
 export type PlaybookReviewWork = PlaybookReviewInput & {
-  userId: string;
   playbookId: string;
   content: PlaybookContent;
   model: string;
@@ -2340,6 +2341,7 @@ export async function beginPlaybookReview(args: PlaybookReviewRequest) {
   if (inserted.error) throw inserted.error;
   const input: PlaybookReviewInput = {
     runId,
+    userId: args.userId,
     documentText,
     instructions: args.instructions ?? null,
     userEmail: args.userEmail ?? null,
@@ -2397,6 +2399,10 @@ export async function runPlaybookReview(
   const stopHeartbeat = keepPlaybookWorkAttended(db, "playbook_runs", runId);
   let stage: PlaybookReportStage = "review.model";
   try {
+    // Checked again rather than trusted from the request: access to the
+    // playbook can be lost while a job waits, as compilePlaybookImport
+    // checks its target.
+    await getPlaybook(work.userId, work.playbookId, db, work.userEmail);
     const keys =
       apiKeys ??
       (await assertPlaybookModelAvailable(
