@@ -64,7 +64,9 @@ files. Their private and personal playbooks, the reviews and imports they ran,
 and shares addressed to them are deleted with the account. The account export
 in **Settings > Privacy & Data** includes the playbooks they created and can
 still open, the reviews they ran on playbooks they can still open, the
-supplementary documents' details, and their import records.
+supplementary documents' details, and their import records. An
+organization's owners can delete all of its playbooks, public and private,
+from the organization's **Privacy & Data** settings.
 
 The editor has two flat glass panels: rules on the left, and the selected
 rule's form on the right. The rules sidebar uses the IDE Explorer's compact
