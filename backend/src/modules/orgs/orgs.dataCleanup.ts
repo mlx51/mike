@@ -14,6 +14,7 @@ import {
 } from "../documents/documents.service";
 import { deleteProjectsByIds } from "../user/user.service";
 import { chunkArray } from "../../lib/arrays";
+import { dbJobsEnabled } from "../../lib/dbq/runner";
 import { deleteFilesBestEffort } from "../../lib/storage";
 import type { Db } from "../../lib/supabase";
 
@@ -139,7 +140,7 @@ async function inlinePlaybookStorageKeys(
     orgId: string,
     ids: string[],
 ): Promise<string[]> {
-    if (process.env.DB_JOBS_ENABLED !== "false") return [];
+    if (dbJobsEnabled()) return [];
     const [playbooks, sources] = await Promise.all([
         db
             .from("playbooks")
