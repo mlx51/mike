@@ -131,8 +131,8 @@ needs a concept, so the first one carries placeholder text to replace.
 
 A dropped file is uploaded straight to object storage under a presigned URL
 scoped to the signed-in account, then the API compiles it from that key. The
-API never receives the file body, and the staged object is removed as soon as
-the import has read it. A saved file is read from where it is
+API never receives the file body, and the staged object is removed once the
+import has finished, whether it succeeded or failed. A saved file is read from where it is
 stored, after the same access check as opening it; the playbook keeps its own
 copy, so later edits to the saved file do not change the playbook.
 
@@ -156,15 +156,17 @@ takes precedence. The limit bounds how long an import waits; it does not abort
 the model request already in flight.
 
 `POST /playbooks/import` checks the file, the replace target, and the model,
-then answers `202` with the import record while compiling continues on the
-server. A request that cannot be compiled is still refused by that call. The
+records the import, queues a `playbook.import` job in `db_jobs`, and answers
+`202` with the import record. A request that cannot be compiled is still
+refused by that call; a file that turns out to be unreadable fails the import
+when the job reads it. The
 page follows the import by polling `GET /playbooks/imports/:importId`, and
 `GET /playbooks/imports` lists the caller's imports still compiling in the
 workspace, so a page opened later picks them up: the playbooks list shows each
 as **Compiling …**, and a notice says when it is ready (with **Open**) or why
-it failed. An import compiles in the API process that started it and records a
-heartbeat every 30 seconds; one silent for two minutes reads as failed with
-"The import stopped before it finished."
+it failed. Imports and reviews run as durable jobs; see
+[Background jobs](#background-jobs) below for how a restart is survived and
+when one reads as "The import stopped before it finished."
 
 Each import creates an audit record with its current processing stage. Failed
 imports retain the stage and error without retaining the source document,
@@ -257,14 +259,41 @@ or upload more, then choose:
 the form holds. Multiple files can be dropped into the document area; each
 file gets its own review run.
 
-Starting a review stores its run and returns at once; the review then runs on
-the server apart from the request, so leaving the page does not stop it. The
-run shows a spinner in **Runs** and in the sidebar's History until it
-finishes. While it runs, the server refreshes the run's `updated_at` every 30
-seconds; a running run with no refresh for two minutes stopped with its
-process, and is reported as failed with a message to run it again. History
-polls `GET /playbooks/runs/status?ids=` for running runs and pages through
-`GET /playbooks/runs/history`.
+Starting a review stores its run, queues a `playbook.review` job, and returns
+at once, so leaving the page does not stop it. The run shows a spinner in
+**Runs** and in the sidebar's History until it finishes. History polls
+`GET /playbooks/runs/status?ids=` for running runs and pages through
+`GET /playbooks/runs/history`. A running run cannot be deleted. Reviews the
+assistant starts from chat wait for their findings, so they run inside the
+chat turn instead of as jobs.
+
+### Background jobs
+
+Reviews and imports run on the durable job queue (`backend/src/lib/dbq/`), not
+inside the request that started them, so a backend restart delays them
+rather than losing them. The job carries what the row does not record (the
+reviewed text and the document version edits are made against; for an
+import, the staged key or saved document and the ids it saves under), and
+reruns from the row: a review always uses the rules snapshot stored on its
+run.
+
+- **Restarts.** A job whose worker dies is claimed again once its lease goes
+  stale (ten minutes) and runs the work from the start. A finished row is left
+  alone, and results are written only while the row is still `running`, so two
+  claims of one job cannot both record an outcome. A re-run's tracked changes
+  are refused if an earlier run already revised the document.
+- **Heartbeat.** While work runs, its row's `updated_at` is refreshed every 30
+  seconds. A re-claimed job whose row is still being refreshed defers instead
+  of running the model a second time beside a worker that is alive.
+- **Interrupted.** A `running` row is reported as failed with "stopped before
+  it finished" only when it has had no heartbeat for two minutes **and** no
+  pending or running job in `db_jobs`. A job that exhausts its three attempts
+  marks its row failed with the same message.
+- **Failures.** A review or import that fails on its own terms (a model error,
+  an unreadable file) is recorded on its row and not retried.
+- **`DB_JOBS_ENABLED=false`.** With the runner off, the same handler runs in
+  the API process after the response, as before jobs; the heartbeat alone
+  keeps it from reading as interrupted, and a restart loses it.
 
 Review findings include the rule, status, exact contract quote,
 location, analysis, and suggested language. Each run is retained with the

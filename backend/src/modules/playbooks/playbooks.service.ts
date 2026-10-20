@@ -21,7 +21,6 @@ export {
   getPlaybookSource,
   importPlaybookFromFile,
   startPlaybookImport,
-  startPlaybookImportFromDocument,
   getPlaybookImport,
   listRunningPlaybookImports,
   INTERRUPTED_IMPORT_ERROR,
@@ -39,6 +38,15 @@ export {
   playbookConfiguration,
   type PlaybookImport,
 } from "./playbooks.operations";
+
+export {
+  queuePlaybookReview,
+  queuePlaybookImport,
+  handlePlaybookReview,
+  handlePlaybookImport,
+  markPlaybookReviewJobFailed,
+  markPlaybookImportJobFailed,
+} from "./playbooks.jobs";
 
 export {
   listPlaybookSources,
