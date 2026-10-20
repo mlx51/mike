@@ -5535,12 +5535,19 @@ create table if not exists public.playbook_imports (
   completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  org_id uuid references public.organizations(id) on delete cascade
+  org_id uuid references public.organizations(id) on delete cascade,
+  -- A replacement's target version: the playbook's updated_at when the
+  -- import began. The compiled content is saved only over that version.
+  target_updated_at timestamptz
 );
 create index if not exists idx_playbook_imports_user_started
   on public.playbook_imports(user_id, started_at desc);
 create index if not exists idx_playbook_imports_user_status
   on public.playbook_imports(user_id, status, started_at desc);
+-- Content writes are refused while a replacement of the playbook runs.
+create index if not exists idx_playbook_imports_running_playbook
+  on public.playbook_imports(playbook_id)
+  where status = 'running';
 alter table public.playbook_imports enable row level security;
 
 -- Supplementary documents a playbook's rules can refer to: copies the
@@ -10908,5 +10915,6 @@ insert into public.schema_migrations (filename) values
   ('20261018_02_playbook_run_history_index.sql'),
   ('20261019_01_playbook_run_scope.sql'),
   ('20261020_01_playbook_import_status.sql'),
-  ('20261020_02_word_chat_message_playbook.sql')
+  ('20261020_02_word_chat_message_playbook.sql'),
+  ('20261020_03_playbook_import_target_version.sql')
 on conflict (filename) do nothing;

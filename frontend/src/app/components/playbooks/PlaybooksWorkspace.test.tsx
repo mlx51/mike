@@ -27,11 +27,16 @@ import {
   reviewDocumentWithPlaybook,
   updatePlaybook,
   deletePlaybook,
+  MikeApiError,
   type Playbook,
   type PlaybookImport,
   type PlaybookRun,
 } from "@/app/lib/mikeApi";
 import { showToast } from "@/app/components/ui/toast";
+import {
+  clearToasts,
+  getSnapshot as getToastSnapshot,
+} from "@/shared/lib/toastStore";
 import { PlaybooksWorkspaceLayout as PlaybooksPage } from "./PlaybooksWorkspace";
 import { SETTINGS_MODELS } from "@/shared/lib/modelCatalog";
 
@@ -652,6 +657,35 @@ describe("playbooks page", () => {
         { visibility: "private" },
       ),
     );
+  });
+
+  it("reports a save refused because another tab is replacing the playbook", async () => {
+    // This page never saw the import (another tab or device started it), so
+    // only the server's refusal stops the save.
+    const detail =
+      "This playbook is being replaced. Wait for the import to finish.";
+    vi.mocked(updatePlaybook).mockRejectedValue(
+      new MikeApiError({ message: detail, status: 409 }),
+    );
+    clearToasts();
+    render(<PlaybooksPage />);
+    await userEvent.click(
+      await screen.findByRole("link", { name: "Playbook A" }),
+    );
+    await userEvent.click(
+      within(
+        screen.getByRole("navigation", { name: "Playbook toolbar" }),
+      ).getByRole("button", { name: "New rule" }),
+    );
+
+    expect(await screen.findByText("Couldn’t save")).toBeInTheDocument();
+    // The error notice carries the server's sentence, not a generic one.
+    expect(getToastSnapshot()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tone: "error", message: detail }),
+      ]),
+    );
+    clearToasts();
   });
 
   it("opens a newly added rule even when its topic was collapsed", async () => {

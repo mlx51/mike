@@ -183,6 +183,13 @@ new one.
 The playbook is read-only while the replacement compiles, even after you close
 the dialog or reload the page, so an edit cannot overwrite the new rules or be
 lost under them; editing resumes when the replacement finishes or fails.
+The server enforces this for every client, including another tab or device:
+while a replacement runs, saving the playbook's content returns 409 "This
+playbook is being replaced. Wait for the import to finish." A replacement
+also saves only over the version of the playbook it began from, so if the
+playbook was saved after it began, the import fails with "The playbook was
+edited while the replacement was compiling. Replace it again." and the edit
+is kept.
 
 A replacement rewrites the current rules. Completed and in-progress reviews
 retain the rules they started with. The replaced file is removed once the

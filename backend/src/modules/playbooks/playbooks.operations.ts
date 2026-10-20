@@ -1083,6 +1083,45 @@ function keepPlaybookWorkAttended(
 export const INTERRUPTED_IMPORT_ERROR =
   "The import stopped before it finished. Import the playbook again.";
 
+/** A content write refused while a replacement import of the playbook runs. */
+export const PLAYBOOK_BEING_REPLACED_ERROR =
+  "This playbook is being replaced. Wait for the import to finish.";
+
+/** A replacement whose target changed after the import began. */
+export const PLAYBOOK_EDITED_DURING_REPLACEMENT_ERROR =
+  "The playbook was edited while the replacement was compiling. Replace it again.";
+
+/**
+ * Refuse a write to a playbook's content while a replacement import of it
+ * runs: the import rewrites the whole content when it finishes, so an edit
+ * saved meanwhile would make it fail (compilePlaybookImport saves only over
+ * the version it began from). Only an import that has resolved its target
+ * holds the playbook, because only such an import compares against it; one
+ * that will never finish (interruptedPlaybookWork) holds nothing.
+ */
+async function assertPlaybookNotBeingReplaced(
+  db: Db,
+  playbookId: string,
+): Promise<void> {
+  const { data, error } = await db
+    .from("playbook_imports")
+    .select("id, status, started_at, updated_at, target_updated_at")
+    .eq("playbook_id", playbookId)
+    .eq("status", "running");
+  if (error) throw error;
+  const replacing = ((data ?? []) as Record<string, unknown>[]).filter(
+    (row) => row.target_updated_at,
+  );
+  if (!replacing.length) return;
+  const interrupted = await interruptedPlaybookWork(
+    db,
+    replacing,
+    playbookImportJobKey,
+  );
+  if (replacing.some((row) => !interrupted.has(String(row.id))))
+    throw new PlaybookRequestError(PLAYBOOK_BEING_REPLACED_ERROR, 409);
+}
+
 /** An import attempt as the page follows it. */
 export type PlaybookImport = {
   id: string;
@@ -1214,6 +1253,13 @@ export type PlaybookImportWork = {
   model: string;
   orgId: string | null;
   replacePlaybookId: string | null;
+  /**
+   * The replace target's updated_at when the import began. The compiled
+   * content is saved only if the playbook still has it, so an edit made in
+   * between fails the import instead of being overwritten. Absent only on a
+   * job queued before the column existed.
+   */
+  targetUpdatedAt?: string | null;
   newPlaybookId: string;
   startedAt: string;
 };
@@ -1339,10 +1385,18 @@ export async function beginPlaybookImport(
     row.org_id = replacing
       ? replacing.orgId
       : await creationScope(db, args.userId, args.workspace);
+    // Read after the attempt was inserted as running: an edit that lands
+    // after this read is refused (updatePlaybookContent) once the value below
+    // is recorded, or detected when the import saves.
+    const targetUpdatedAt = replacing?.updatedAt ?? null;
 
     stage = "checking_model";
     row.stage = stage;
-    await updateImportAttempt(db, attemptId, { stage, org_id: row.org_id });
+    await updateImportAttempt(db, attemptId, {
+      stage,
+      org_id: row.org_id,
+      target_updated_at: targetUpdatedAt,
+    });
     validateModel(model);
     await assertPlaybookModelAvailable(args.userId, model, db, row.org_id);
     return {
@@ -1356,6 +1410,7 @@ export async function beginPlaybookImport(
         model,
         orgId: row.org_id,
         replacePlaybookId: replacing?.id ?? null,
+        targetUpdatedAt,
         newPlaybookId: crypto.randomUUID(),
         startedAt: now,
       },
@@ -1495,19 +1550,16 @@ export async function compilePlaybookImport(
     stage = "saving_playbook";
     await updateImportAttempt(db, attemptId, { stage });
     // Review runs retain their own content snapshot when the source changes.
-    const { error } = replacing
-      ? await db
-          .from("playbooks")
-          .update({
-            name: content.name,
-            description: content.description,
-            content_json: content,
-            source_filename: work.filename,
-            source_storage_key: storageKey,
-            import_model: model,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", id)
+    const { data: replaced, error } = replacing
+      ? await replacePlaybookContent(db, id, work.targetUpdatedAt, {
+          name: content.name,
+          description: content.description,
+          content_json: content,
+          source_filename: work.filename,
+          source_storage_key: storageKey,
+          import_model: model,
+          updated_at: new Date().toISOString(),
+        })
       : await db.from("playbooks").insert({
           id,
           user_id: userId,
@@ -1529,6 +1581,19 @@ export async function compilePlaybookImport(
       uploadedStorageKey = null;
       throw error;
     }
+    // Nothing matched: the playbook changed after the import began, unless
+    // the change was an earlier run of this same import (its source key
+    // names this attempt), which already saved this content. Otherwise the
+    // catch below removes the uploaded source; the playbook is untouched.
+    if (
+      replacing &&
+      !(replaced as unknown[] | null)?.length &&
+      (await playbookSourceStorageKey(db, id)) !== storageKey
+    )
+      throw new PlaybookRequestError(
+        PLAYBOOK_EDITED_DURING_REPLACEMENT_ERROR,
+        409,
+      );
     uploadedStorageKey = null;
     // The row now points at the new object, so the superseded one is safe to
     // remove. Losing this cleanup must not fail the import.
@@ -1557,6 +1622,25 @@ export async function compilePlaybookImport(
   } finally {
     stopHeartbeat();
   }
+}
+
+/**
+ * Write a replacement's content only if the playbook is still the version
+ * the import began from. Every write to a playbook's content sets
+ * updated_at in this module (there is no trigger), so an unchanged value
+ * means no write since. A job queued before target_updated_at existed has
+ * no value to compare and writes unguarded, as it always did.
+ */
+function replacePlaybookContent(
+  db: Db,
+  id: string,
+  targetUpdatedAt: string | null | undefined,
+  values: Record<string, unknown>,
+) {
+  const update = db.from("playbooks").update(values).eq("id", id);
+  return (
+    targetUpdatedAt ? update.eq("updated_at", targetUpdatedAt) : update
+  ).select("id");
 }
 
 /**
@@ -1680,6 +1764,7 @@ export async function updatePlaybookContent(
   email?: string | null,
 ): Promise<Playbook> {
   const playbook = await editablePlaybook(userId, id, db, email);
+  await assertPlaybookNotBeingReplaced(db, id);
   const parsed = editablePlaybookSchema.safeParse(raw);
   if (!parsed.success)
     throw new PlaybookRequestError(

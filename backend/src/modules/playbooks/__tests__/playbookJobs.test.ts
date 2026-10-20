@@ -25,12 +25,14 @@ import {
   blankPlaybookContent,
   INTERRUPTED_IMPORT_ERROR,
   INTERRUPTED_RUN_ERROR,
+  PLAYBOOK_EDITED_DURING_REPLACEMENT_ERROR,
 } from "../playbooks.operations";
 import {
   handlePlaybookImport,
   handlePlaybookReview,
   markPlaybookImportJobFailed,
   markPlaybookReviewJobFailed,
+  queuePlaybookImport,
   queuePlaybookReview,
 } from "../playbooks.jobs";
 import { database, type Row } from "./playbookTestDb";
@@ -338,6 +340,118 @@ describe("the playbook.import job", () => {
       playbook_id: "new-book",
     });
     expect(storage.deleteFile).toHaveBeenCalledWith(STAGED_KEY);
+  });
+});
+
+describe("a replacement import racing an edit", () => {
+  const VERSION = "2026-10-17T09:00:00.000Z";
+  const replacement = { ...importPayload, replacePlaybookId: "book" };
+
+  it("records the version of the playbook it replaces", async () => {
+    const { db, tables } = database([book({ updated_at: VERSION })]);
+
+    await queuePlaybookImport({
+      userId: "owner",
+      model: MODEL,
+      playbookId: "book",
+      source: { storageKey: STAGED_KEY, filename: "Standards.docx", size: 10 },
+      db,
+    });
+
+    expect(tables.playbook_imports[0]).toMatchObject({
+      playbook_id: "book",
+      target_updated_at: VERSION,
+    });
+    expect(tables.db_jobs[0].payload).toMatchObject({
+      replacePlaybookId: "book",
+      targetUpdatedAt: VERSION,
+    });
+  });
+
+  it("fails the import and keeps an edit saved while it compiled", async () => {
+    const edited = blankPlaybookContent("Edited meanwhile");
+    // The playbook was saved after the import began from VERSION.
+    const { db, tables } = database([
+      book({
+        updated_at: "2026-10-17T09:05:00.000Z",
+        content_json: edited,
+        source_storage_key: "playbooks/owner/book/source-old.docx",
+      }),
+    ]);
+    tables.playbook_imports = [
+      importRow({ playbook_id: "book", target_updated_at: VERSION }),
+    ];
+    storage.downloadFile.mockResolvedValue(await sourceDocx());
+    completeText.mockResolvedValue(compiled("Standards"));
+
+    await handlePlaybookImport(
+      db,
+      job("playbook.import", { ...replacement, targetUpdatedAt: VERSION }),
+    );
+
+    expect(tables.playbook_imports[0]).toMatchObject({
+      status: "failed",
+      error: PLAYBOOK_EDITED_DURING_REPLACEMENT_ERROR,
+    });
+    expect(tables.playbooks[0]).toMatchObject({
+      content_json: edited,
+      updated_at: "2026-10-17T09:05:00.000Z",
+      source_storage_key: "playbooks/owner/book/source-old.docx",
+    });
+    // The new source was uploaded before the save; it goes, the old stays.
+    const [uploaded] = storage.uploadFile.mock.calls[0] as [string];
+    expect(storage.deleteFile).toHaveBeenCalledWith(uploaded);
+    expect(storage.deleteFile).not.toHaveBeenCalledWith(
+      "playbooks/owner/book/source-old.docx",
+    );
+  });
+
+  it("replaces the content when the playbook is still the version it began from", async () => {
+    const { db, tables } = database([book({ updated_at: VERSION })]);
+    tables.playbook_imports = [
+      importRow({ playbook_id: "book", target_updated_at: VERSION }),
+    ];
+    storage.downloadFile.mockResolvedValue(await sourceDocx());
+    completeText.mockResolvedValue(compiled("Standards"));
+
+    await handlePlaybookImport(
+      db,
+      job("playbook.import", { ...replacement, targetUpdatedAt: VERSION }),
+    );
+
+    expect(tables.playbook_imports[0]).toMatchObject({
+      status: "completed",
+      playbook_id: "book",
+    });
+    expect(tables.playbooks[0].name).toBe("Standards");
+    expect(tables.playbooks[0].updated_at).not.toBe(VERSION);
+  });
+
+  it("completes a re-run whose earlier run already saved the replacement", async () => {
+    // Run one saved (moving updated_at) but died before recording it.
+    const saved = "playbooks/owner/book/source-imp-1.docx";
+    const { db, tables } = database([
+      book({ updated_at: "2026-10-17T09:05:00.000Z", source_storage_key: saved }),
+    ]);
+    tables.playbook_imports = [
+      importRow({
+        playbook_id: "book",
+        target_updated_at: VERSION,
+        started_at: silent(),
+        updated_at: silent(),
+      }),
+    ];
+    storage.downloadFile.mockResolvedValue(await sourceDocx());
+    completeText.mockResolvedValue(compiled("Standards"));
+
+    await handlePlaybookImport(
+      db,
+      job("playbook.import", { ...replacement, targetUpdatedAt: VERSION }, 2),
+    );
+
+    expect(tables.playbook_imports[0]).toMatchObject({ status: "completed" });
+    expect(tables.playbooks[0].source_storage_key).toBe(saved);
+    expect(storage.deleteFile).not.toHaveBeenCalledWith(saved);
   });
 });
 

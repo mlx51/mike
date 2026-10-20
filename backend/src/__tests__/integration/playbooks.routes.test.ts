@@ -332,13 +332,83 @@ describe("playbook input validation", () => {
     ],
     ["a body that is not a playbook", { unrelated: true }, 400],
   ])("handles autosaving %s", async (_label, body, status) => {
-    from.mockImplementation(() => queryReturning(playbookRow()));
+    from.mockImplementation((table: string) =>
+      queryReturning(table === "playbook_imports" ? [] : playbookRow()),
+    );
 
     const response = await request(app).put("/playbooks/pb-1").send(body);
 
     expect(response.status).toBe(status);
     if (status === 400) expect(response.body.detail).toMatch(/invalid field/i);
     expect(response.body.code).not.toBe("internal_error");
+  });
+
+  it("refuses to save while a replacement of the playbook compiles, and saves once it finished", async () => {
+    const now = new Date().toISOString();
+    let running: unknown[] = [
+      {
+        id: "imp-1",
+        status: "running",
+        started_at: now,
+        updated_at: now,
+        target_updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const playbooks: Record<string, unknown>[] = [];
+    from.mockImplementation((table: string) => {
+      if (table === "playbook_imports") return queryReturning(running);
+      const query = queryReturning(playbookRow());
+      if (table === "playbooks")
+        query.update = vi.fn((values: Record<string, unknown>) => {
+          playbooks.push(values);
+          return query;
+        });
+      return query;
+    });
+    const save = () =>
+      request(app)
+        .put("/playbooks/pb-1")
+        .send({ content: playbookRow().content_json });
+
+    const refused = await save();
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toBe(
+      "This playbook is being replaced. Wait for the import to finish.",
+    );
+    expect(playbooks).toEqual([]);
+
+    // Finished: no running import targets the playbook any more.
+    running = [];
+    const saved = await save();
+    expect(saved.status).toBe(200);
+    expect(playbooks).toHaveLength(1);
+  });
+
+  it("does not let an import that will never finish hold the playbook", async () => {
+    const stale = new Date(Date.now() - 10 * 60_000).toISOString();
+    from.mockImplementation((table: string) =>
+      queryReturning(
+        table === "playbook_imports"
+          ? [
+              {
+                id: "imp-1",
+                status: "running",
+                started_at: stale,
+                updated_at: stale,
+                target_updated_at: "2026-01-01T00:00:00.000Z",
+              },
+            ]
+          : table === "db_jobs"
+            ? []
+            : playbookRow(),
+      ),
+    );
+
+    const response = await request(app)
+      .put("/playbooks/pb-1")
+      .send({ content: playbookRow().content_json });
+
+    expect(response.status).toBe(200);
   });
 
   it("answers 400, not 500, for a model id it does not recognise", async () => {
