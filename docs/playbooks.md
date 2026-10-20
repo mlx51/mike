@@ -224,6 +224,19 @@ OpenRouter key is configured. A model is offered only when the account has a
 usable key for its provider; organization playbooks use that workspace’s
 effective provider keys. Local Ollama models need none.
 
+## In the assistant
+
+**Use in assistant**, or **Playbooks** in the composer's **+** menu, attaches
+a playbook to the next message. The message carries it as `playbook: { id,
+title }`, and the chat engine tells the model to review the attached document
+with `run_playbook`, which checks access to the playbook again before it
+reviews anything. The Word add-in's composer has the same **Playbooks** item
+and pill. It lists the Personal playbooks the user can open, and
+`POST /word-chat` answers 404 for a playbook the user cannot open, as `GET
+/playbooks/:id` does. In Word, the review reads the open document's text, so
+it saves no new version: the findings come back in the chat, and the user can
+ask the assistant to make the suggested changes as Word edits.
+
 ## Contract review
 
 Select **New run** on the **Runs** tab (in the toolbar or beside **Your

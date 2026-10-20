@@ -2921,6 +2921,7 @@ create table if not exists public.word_chat_messages (
   content jsonb,
   files jsonb,
   workflow jsonb,
+  playbook jsonb,
   citations jsonb,
   created_at timestamptz not null default now()
 );
@@ -10906,5 +10907,6 @@ insert into public.schema_migrations (filename) values
   ('20261018_01_remove_playbook_global_guidance.sql'),
   ('20261018_02_playbook_run_history_index.sql'),
   ('20261019_01_playbook_run_scope.sql'),
-  ('20261020_01_playbook_import_status.sql')
+  ('20261020_01_playbook_import_status.sql'),
+  ('20261020_02_word_chat_message_playbook.sql')
 on conflict (filename) do nothing;
