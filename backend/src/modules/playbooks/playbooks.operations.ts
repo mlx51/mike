@@ -64,6 +64,12 @@ import {
   recordPlaybookRunAudit,
   recordPlaybookRunDeletedAudit,
 } from "./playbooks.audit";
+import { UserFacingError } from "../../lib/userFacingError";
+import {
+  importReportStage,
+  reportPlaybookFailure,
+  type PlaybookReportStage,
+} from "./playbooks.reporting";
 
 type Db = ReturnType<typeof createServerSupabase>;
 
@@ -268,6 +274,30 @@ export class PlaybookRequestError extends Error {
   }
 }
 
+/**
+ * The model's answer could not be used. The user sees the message, as with
+ * any PlaybookRequestError, but unlike a refused request it is reported: a
+ * model that stops producing valid output is something to know about.
+ */
+export class PlaybookModelOutputError extends PlaybookRequestError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 400, options);
+    this.name = "PlaybookModelOutputError";
+  }
+}
+
+/**
+ * A failure that is the expected answer to the request (a bad file, a
+ * missing or rejected key, no access), not a fault: shown to the user, never
+ * reported to Sentry.
+ */
+export function isPlaybookRefusal(error: unknown): boolean {
+  if (error instanceof PlaybookModelOutputError) return false;
+  return (
+    error instanceof PlaybookRequestError || error instanceof UserFacingError
+  );
+}
+
 export class PlaybookImportError extends Error {
   readonly code = "PLAYBOOK_IMPORT_FAILED";
 
@@ -309,7 +339,9 @@ function parseModelJson(raw: string): unknown {
         return JSON.parse(jsonrepair(slice));
       }
     }
-    throw new PlaybookRequestError("The model did not return structured JSON.");
+    throw new PlaybookModelOutputError(
+      "The model did not return structured JSON.",
+    );
   }
 }
 
@@ -400,9 +432,8 @@ export async function validatePlaybookCompilationWithRetry(args: {
     try {
       return validateCompiledPlaybookOutput(repaired, args.structure);
     } catch (retryError) {
-      throw new PlaybookRequestError(
+      throw new PlaybookModelOutputError(
         `The selected model returned invalid structured output twice. ${validationErrorMessage(retryError)}`,
-        400,
         { cause: retryError },
       );
     }
@@ -1067,6 +1098,8 @@ function keepPlaybookWorkAttended(
   table: "playbook_runs" | "playbook_imports",
   id: string,
 ): () => void {
+  // One report per piece of work: a database that is down fails every beat.
+  let reported = false;
   const heartbeat = setInterval(() => {
     void db
       .from(table)
@@ -1074,12 +1107,22 @@ function keepPlaybookWorkAttended(
       .eq("id", id)
       .eq("status", "running")
       .then(({ error }) => {
-        if (error)
-          console.error("[playbooks] heartbeat failed", {
-            table,
-            id,
-            error: safeError(error),
+        if (!error) return;
+        if (!reported) {
+          reported = true;
+          const review = table === "playbook_runs";
+          reportPlaybookFailure(error, {
+            stage: "heartbeat",
+            level: "warning",
+            jobKind: review ? "playbook.review" : "playbook.import",
+            ids: review ? { run_id: id } : { import_id: id },
           });
+        }
+        console.warn("[playbooks] heartbeat failed", {
+          table,
+          id,
+          error: safeError(error),
+        });
       });
   }, PLAYBOOK_HEARTBEAT_MS);
   heartbeat.unref?.();
@@ -1287,8 +1330,18 @@ async function recordImportFailure(
   attemptId: string,
   stage: PlaybookImportStage,
   error: unknown,
+  source: { filename: string; playbookId: string | null },
 ): Promise<PlaybookImportError> {
-  console.error("[playbooks] import failed", {
+  const report = {
+    jobKind: "playbook.import" as const,
+    fileType: playbookImportFileType(source.filename),
+    ids: { import_id: attemptId, playbook_id: source.playbookId },
+  };
+  if (!isPlaybookRefusal(error))
+    reportPlaybookFailure(error, { ...report, stage: importReportStage(stage) });
+  // Not console.error: a refusal is not a fault, and a reported failure would
+  // be filed again by the console bridge.
+  console.warn("[playbooks] import failed", {
     attemptId,
     stage,
     error: safeError(error),
@@ -1301,10 +1354,11 @@ async function recordImportFailure(
       error: message,
       completed_at: new Date().toISOString(),
     });
-  } catch (auditError) {
-    console.error("[playbooks] failed to record import failure", {
+  } catch (recordError) {
+    reportPlaybookFailure(recordError, { ...report, stage: "import.record" });
+    console.warn("[playbooks] failed to record import failure", {
       attemptId,
-      error: safeError(auditError),
+      error: safeError(recordError),
     });
   }
   return new PlaybookImportError(
@@ -1422,7 +1476,10 @@ export async function beginPlaybookImport(
       },
     };
   } catch (error) {
-    throw await recordImportFailure(db, attemptId, stage, error);
+    throw await recordImportFailure(db, attemptId, stage, error, {
+      filename: args.filename,
+      playbookId: args.playbookId ?? null,
+    });
   }
 }
 
@@ -1624,7 +1681,10 @@ export async function compilePlaybookImport(
     return getPlaybook(userId, id, db, work.userEmail);
   } catch (error) {
     if (uploadedStorageKey) await deleteFile(uploadedStorageKey).catch(() => {});
-    throw await recordImportFailure(db, attemptId, stage, error);
+    throw await recordImportFailure(db, attemptId, stage, error, {
+      filename: work.filename,
+      playbookId: work.replacePlaybookId,
+    });
   } finally {
     stopHeartbeat();
   }
@@ -2324,6 +2384,7 @@ export async function runPlaybookReview(
 ) {
   const { runId } = work;
   const stopHeartbeat = keepPlaybookWorkAttended(db, "playbook_runs", runId);
+  let stage: PlaybookReportStage = "review.model";
   try {
     const keys =
       apiKeys ??
@@ -2371,6 +2432,7 @@ export async function runPlaybookReview(
       scope === "issues"
         ? normalized.filter((finding) => ISSUE_STATUSES.has(finding.status))
         : normalized;
+    stage = "review.apply_edits";
     const { findings, version } =
       work.documentId && work.expectedVersion
         ? await applyReviewEdits({
@@ -2384,6 +2446,7 @@ export async function runPlaybookReview(
         : { findings: reviewed, version: null };
     const versionId = version?.id ?? null;
     const completedAt = new Date().toISOString();
+    stage = "review.save";
     const updated = await db
       .from("playbook_runs")
       .update({
@@ -2422,7 +2485,13 @@ export async function runPlaybookReview(
       completedAt,
     };
   } catch (error) {
-    console.error("[playbooks] review failed", { runId, error: safeError(error) });
+    const report = {
+      jobKind: "playbook.review" as const,
+      ids: { run_id: runId, playbook_id: work.playbookId },
+    };
+    if (!isPlaybookRefusal(error)) reportPlaybookFailure(error, { ...report, stage });
+    // Not console.error: see recordImportFailure.
+    console.warn("[playbooks] review failed", { runId, error: safeError(error) });
     const completedAt = new Date().toISOString();
     const marked = await db
       .from("playbook_runs")
@@ -2436,6 +2505,13 @@ export async function runPlaybookReview(
       .eq("user_id", work.userId)
       .eq("status", "running")
       .select("id");
+    if (marked.error) {
+      reportPlaybookFailure(marked.error, { ...report, stage: "review.record" });
+      console.warn("[playbooks] failed to record review failure", {
+        runId,
+        error: safeError(marked.error),
+      });
+    }
     if (marked.data?.length)
       await recordPlaybookRunAudit(db, work, { status: "failed" });
     throw error;

@@ -297,7 +297,10 @@ run.
   pending or running job in `db_jobs`. A job that exhausts its three attempts
   marks its row failed with the same message.
 - **Failures.** A review or import that fails on its own terms (a model error,
-  an unreadable file) is recorded on its row and not retried.
+  an unreadable file) is recorded on its row and not retried. Failures that
+  are faults rather than refusals are also reported to Sentry under
+  `component=playbooks`, by stage, with ids only (see
+  [observability](observability.md#what-gets-reported)).
 - **`DB_JOBS_ENABLED=false`.** With the runner off, the same handler runs in
   the API process after the response, as before jobs; the heartbeat alone
   keeps it from reading as interrupted, and a restart loses it.

@@ -40,6 +40,7 @@ import {
   type PlaybookReviewRequest,
 } from "./playbooks.operations";
 import { isStagedPlaybookImportKey } from "./playbooks.staging";
+import { reportPlaybookFailure, type PlaybookJobKind } from "./playbooks.reporting";
 import {
   auditedPlaybookImport,
   recordPlaybookImportAudit,
@@ -190,7 +191,15 @@ async function clearStagedImport(payload: PlaybookImportJobPayload) {
   // playbooks.staging.ts): the payload is ours, but a key is a delete target.
   if (!isStagedPlaybookImportKey(payload.userId, payload.storageKey)) return;
   await deleteFile(payload.storageKey).catch((error) => {
-    console.error("[playbooks] staged upload cleanup failed", {
+    // The upload is orphaned in storage: worth knowing, never worth failing
+    // an import that has already recorded its outcome.
+    reportPlaybookFailure(error, {
+      stage: "import.cleanup",
+      level: "warning",
+      jobKind: "playbook.import",
+      ids: { import_id: payload.attemptId },
+    });
+    console.warn("[playbooks] staged upload cleanup failed", {
       storageKey: payload.storageKey,
       error: safeError(error),
     });
@@ -291,7 +300,18 @@ async function dispatch(
   };
   if (!dbJobsEnabled()) {
     void handler(db, job).catch(async (error) => {
-      console.error("[playbooks] inline job failed", {
+      // The in-process twin of the runner's terminal report: with the
+      // runner off, nothing else hears of a job that ended this way.
+      reportPlaybookFailure(error, {
+        stage: "job.terminal",
+        jobKind: kind as PlaybookJobKind,
+        ids: {
+          run_id: typeof payload.runId === "string" ? payload.runId : undefined,
+          import_id:
+            typeof payload.attemptId === "string" ? payload.attemptId : undefined,
+        },
+      });
+      console.warn("[playbooks] inline job failed", {
         kind,
         error: safeError(error),
       });
