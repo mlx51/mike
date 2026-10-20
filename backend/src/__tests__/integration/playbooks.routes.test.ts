@@ -11,8 +11,10 @@ const {
   getSignedUploadUrl,
   headFile,
   queuePlaybookImport,
+  recordAudit,
 } = vi.hoisted(() => ({
   from: vi.fn(),
+  recordAudit: vi.fn(async () => undefined),
   createFileReadStream: vi.fn(),
   deleteFile: vi.fn(),
   downloadFile: vi.fn(),
@@ -35,6 +37,8 @@ vi.mock("../../lib/supabase", () => ({
   }),
 }));
 
+vi.mock("../../lib/audit", () => ({ recordAudit }));
+
 vi.mock("../../middleware/auth", () => ({
   requireAuth: (
     _req: unknown,
@@ -42,6 +46,7 @@ vi.mock("../../middleware/auth", () => ({
     next: () => void,
   ) => {
     res.locals.userId = "u1";
+    res.locals.userEmail = "u1@example.com";
     next();
   },
   requireMfaIfEnrolled: (_req: unknown, _res: unknown, next: () => void) =>
@@ -218,6 +223,16 @@ describe("creating a playbook without a Word file", () => {
 
     expect(response.status).toBe(201);
     expect(queuePlaybookImport).not.toHaveBeenCalled();
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "u1",
+        userEmail: "u1@example.com",
+        action: "playbook.created",
+        surface: "playbooks",
+        title: "Untitled playbook",
+      }),
+    );
   });
 
   it("accepts a name and details for the new playbook", async () => {
@@ -277,6 +292,7 @@ describe("creating a playbook without a Word file", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.detail).toMatch(/too long/i);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });
 
@@ -474,6 +490,7 @@ describe("playbook deletion", () => {
     expect(playbook.delete).toHaveBeenCalledOnce();
     // The database cascades runs only when the parent deletion succeeds.
     expect(from).not.toHaveBeenCalledWith("playbook_runs");
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("answers 204 and clears the stored source when every delete succeeds", async () => {
@@ -493,6 +510,68 @@ describe("playbook deletion", () => {
     expect(deleteFile).toHaveBeenCalledWith(
       "playbooks/u1/pb-1/sources/s1.pdf",
     );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "playbook.deleted",
+        surface: "playbooks",
+        title: "Commercial Playbook",
+        detail: { playbook_id: "pb-1" },
+      }),
+    );
+  });
+});
+
+describe("review run deletion", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const RUN = "33333333-3333-4333-8333-333333333333";
+
+  it("records the deleted run in the audit log", async () => {
+    from.mockImplementation((table: string) =>
+      queryReturning(
+        table === "playbook_runs"
+          ? {
+              id: RUN,
+              playbook_id: "pb-1",
+              document_id: null,
+              status: "completed",
+              error: null,
+            }
+          : playbookRow(),
+      ),
+    );
+
+    const response = await request(app).delete(`/playbooks/runs/${RUN}`);
+
+    expect(response.status).toBe(204);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "u1",
+        userEmail: "u1@example.com",
+        action: "playbook.run.deleted",
+        surface: "playbooks",
+        title: "Commercial Playbook",
+        detail: { playbook_id: "pb-1", run_id: RUN },
+      }),
+    );
+  });
+
+  it("records nothing when the run is still running", async () => {
+    from.mockImplementation(() =>
+      queryReturning({
+        id: RUN,
+        playbook_id: "pb-1",
+        status: "running",
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    );
+
+    const response = await request(app).delete(`/playbooks/runs/${RUN}`);
+
+    expect(response.status).toBe(409);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });
 

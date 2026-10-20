@@ -40,6 +40,11 @@ import {
   type PlaybookReviewRequest,
 } from "./playbooks.operations";
 import { isStagedPlaybookImportKey } from "./playbooks.staging";
+import {
+  auditedPlaybookImport,
+  recordPlaybookImportAudit,
+  recordPlaybookRunAudit,
+} from "./playbooks.audit";
 
 export const PLAYBOOK_REVIEW_JOB = "playbook.review";
 export const PLAYBOOK_IMPORT_JOB = "playbook.import";
@@ -122,15 +127,19 @@ async function untilRecorded(
   }
 }
 
-/** Mark a row failed with a message written for the user, once. */
+/**
+ * Mark a row failed with a message written for the user, once. Returns the
+ * row when this call is the one that failed it, so its outcome is audited by
+ * exactly one caller.
+ */
 async function markFailed(
   db: Db,
   table: Table,
   id: string,
   message: string,
-): Promise<void> {
+): Promise<Record<string, unknown> | null> {
   const completedAt = new Date().toISOString();
-  const { error } = await db
+  const { data, error } = await db
     .from(table)
     .update({
       status: "failed",
@@ -139,8 +148,10 @@ async function markFailed(
       updated_at: completedAt,
     })
     .eq("id", id)
-    .eq("status", "running");
+    .eq("status", "running")
+    .select("*");
   if (error) throw error;
+  return ((data as Record<string, unknown>[] | null) ?? [])[0] ?? null;
 }
 
 export async function handlePlaybookReview(db: Db, job: DbJob): Promise<void> {
@@ -159,8 +170,17 @@ export async function markPlaybookReviewJobFailed(
   db: Db,
   job: DbJob,
 ): Promise<void> {
-  const { runId } = job.payload as unknown as PlaybookReviewInput;
-  await markFailed(db, "playbook_runs", runId, INTERRUPTED_RUN_ERROR);
+  const input = job.payload as unknown as PlaybookReviewInput;
+  const row = await markFailed(
+    db,
+    "playbook_runs",
+    input.runId,
+    INTERRUPTED_RUN_ERROR,
+  );
+  if (row)
+    await recordPlaybookRunAudit(db, playbookReviewWork(row, input), {
+      status: "failed",
+    });
 }
 
 /** Remove a staged upload once nothing will read it again. */
@@ -208,7 +228,11 @@ export async function handlePlaybookImport(db: Db, job: DbJob): Promise<void> {
   const row = await claimRow(db, "playbook_imports", payload.attemptId, job);
   if (row)
     await untilRecorded(db, "playbook_imports", payload.attemptId, async () =>
-      compilePlaybookImport(db, payload, () => readImportFile(db, payload)),
+      auditedPlaybookImport(
+        db,
+        payload,
+        compilePlaybookImport(db, payload, () => readImportFile(db, payload)),
+      ),
     );
   // Reached only once the attempt has an outcome; a retry still needs the file.
   await clearStagedImport(payload);
@@ -220,12 +244,16 @@ export async function markPlaybookImportJobFailed(
   job: DbJob,
 ): Promise<void> {
   const payload = job.payload as unknown as PlaybookImportJobPayload;
-  await markFailed(
+  const row = await markFailed(
     db,
     "playbook_imports",
     payload.attemptId,
     INTERRUPTED_IMPORT_ERROR,
   );
+  if (row)
+    await recordPlaybookImportAudit(db, payload, {
+      failedStage: typeof row.stage === "string" ? row.stage : null,
+    });
   await clearStagedImport(payload);
 }
 

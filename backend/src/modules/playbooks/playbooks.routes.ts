@@ -153,7 +153,12 @@ playbooksRouter.delete("/runs/:runId", async (req, res) => {
   try {
     if (!UUID.test(req.params.runId))
       return void res.status(404).json({ detail: "Run not found." });
-    await deletePlaybookRun(res.locals.userId as string, req.params.runId);
+    await deletePlaybookRun(
+      res.locals.userId as string,
+      req.params.runId,
+      undefined,
+      res.locals.userEmail,
+    );
     res.status(204).send();
   } catch (error) {
     sendError(res, error);
@@ -223,6 +228,7 @@ playbooksRouter.post("/", requireMfaIfEnrolled, async (req, res) => {
         undefined,
         body.workspace,
         body.visibility,
+        res.locals.userEmail,
       ),
     );
   } catch (error) {

@@ -58,6 +58,12 @@ import {
   readPlaybookSourceText,
   type PlaybookSourceRow,
 } from "./playbooks.sourceStore";
+import {
+  auditedPlaybookImport,
+  recordPlaybookAudit,
+  recordPlaybookRunAudit,
+  recordPlaybookRunDeletedAudit,
+} from "./playbooks.audit";
 
 type Db = ReturnType<typeof createServerSupabase>;
 
@@ -1660,7 +1666,11 @@ export async function startPlaybookImport(
   });
   return {
     attempt,
-    done: compilePlaybookImport(db, work, args.buffer, args.dependencies),
+    done: auditedPlaybookImport(
+      db,
+      work,
+      compilePlaybookImport(db, work, args.buffer, args.dependencies),
+    ),
   };
 }
 
@@ -1717,6 +1727,7 @@ export async function createPlaybook(
   db: Db = createServerSupabase(),
   workspace?: unknown,
   rawVisibility?: unknown,
+  email?: string | null,
 ): Promise<Playbook> {
   const orgId = await creationScope(db, userId, workspace);
   const visibility = parseContentVisibility(rawVisibility, orgId);
@@ -1752,6 +1763,14 @@ export async function createPlaybook(
     updated_at: now,
   });
   if (error) throw error;
+  void recordPlaybookAudit(db, {
+    userId,
+    userEmail: email,
+    orgId,
+    action: "playbook.created",
+    title: content.name,
+    detail: { playbook_id: id },
+  });
   return getPlaybook(userId, id, db);
 }
 
@@ -2377,8 +2396,12 @@ export async function runPlaybookReview(
       })
       .eq("id", runId)
       .eq("user_id", work.userId)
-      .eq("status", "running");
+      .eq("status", "running")
+      .select("id");
     if (updated.error) throw updated.error;
+    // Only the claim whose write landed records the run in the audit log.
+    if (updated.data?.length)
+      await recordPlaybookRunAudit(db, work, { status: "completed", findings });
     return {
       id: runId,
       playbookId: work.playbookId,
@@ -2401,7 +2424,7 @@ export async function runPlaybookReview(
   } catch (error) {
     console.error("[playbooks] review failed", { runId, error: safeError(error) });
     const completedAt = new Date().toISOString();
-    await db
+    const marked = await db
       .from("playbook_runs")
       .update({
         status: "failed",
@@ -2411,7 +2434,10 @@ export async function runPlaybookReview(
       })
       .eq("id", runId)
       .eq("user_id", work.userId)
-      .eq("status", "running");
+      .eq("status", "running")
+      .select("id");
+    if (marked.data?.length)
+      await recordPlaybookRunAudit(db, work, { status: "failed" });
     throw error;
   } finally {
     stopHeartbeat();
@@ -2650,10 +2676,11 @@ export async function deletePlaybookRun(
   userId: string,
   runId: string,
   db: Db = createServerSupabase(),
+  email?: string | null,
 ) {
   const { data, error } = await db
     .from("playbook_runs")
-    .select("id, status, error, started_at, updated_at")
+    .select("id, playbook_id, document_id, status, error, started_at, updated_at")
     .eq("id", runId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -2672,6 +2699,13 @@ export async function deletePlaybookRun(
     .eq("id", runId)
     .eq("user_id", userId);
   if (deleted.error) throw deleted.error;
+  await recordPlaybookRunDeletedAudit(db, {
+    userId,
+    userEmail: email,
+    runId,
+    playbookId: String(row.playbook_id),
+    documentId: row.document_id ? String(row.document_id) : null,
+  });
 }
 
 /** Small status snapshots of the caller's own runs, for polling. */
@@ -2730,7 +2764,7 @@ export async function deletePlaybook(
   db: Db = createServerSupabase(),
   email?: string | null,
 ): Promise<void> {
-  await editablePlaybook(userId, id, db, email, "owner");
+  const playbook = await editablePlaybook(userId, id, db, email, "owner");
   const { data, error } = await db
     .from("playbooks")
     .select("source_storage_key")
@@ -2741,8 +2775,16 @@ export async function deletePlaybook(
   const sources = await listPlaybookSourceRows(db, id);
   // Runs and source rows cascade in this same statement. Deleting runs first
   // would lose review history if the playbook delete then failed.
-  const playbook = await db.from("playbooks").delete().eq("id", id);
-  if (playbook.error) throw playbook.error;
+  const deleted = await db.from("playbooks").delete().eq("id", id);
+  if (deleted.error) throw deleted.error;
+  void recordPlaybookAudit(db, {
+    userId,
+    userEmail: email,
+    orgId: playbook.orgId,
+    action: "playbook.deleted",
+    title: playbook.name,
+    detail: { playbook_id: id },
+  });
   if (data.source_storage_key)
     await deleteFile(String(data.source_storage_key)).catch(() => {});
   // Clear bytes promptly; the database also queues durable cleanup for failed

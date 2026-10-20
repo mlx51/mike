@@ -335,3 +335,26 @@ The current one-pass safety limits are 150,000 extracted characters per
 imported playbook, 100,000 serialized characters per playbook, and
 180,000 characters per reviewed contract. Oversized inputs fail explicitly
 instead of being silently truncated.
+
+## Audit log
+
+Playbook activity is recorded in the activity history (the **History** page,
+an organization's audit page, and the audit CSV export) under the `playbooks`
+surface, as chat, document, and tabular review activity is:
+
+| Action | Recorded when |
+| --- | --- |
+| `playbook.created` | A playbook is started without a file. |
+| `playbook.imported` | An import that creates a playbook ends; a failed one carries the `stage` it stopped at. |
+| `playbook.replaced` | An import that replaces a playbook's content ends; a failed one carries its `stage`. |
+| `playbook.deleted` | A playbook is deleted. |
+| `playbook.run` | A review completes or fails. The row holds the model and the stored document reviewed, if any; `detail` holds the playbook and run ids, scope, posture, and, for a completed review, the number of findings per status. |
+| `playbook.run.deleted` | A review run is deleted. |
+
+Rows carry the playbook's name as their title and ids in `detail`, never
+rule text, findings, or contract text. An import refused in the request that
+asked for it (wrong file type, model unavailable) answers that request with
+the reason and is not recorded. A review or import is recorded by the claim
+of its job that wrote the outcome, so a job run again after a restart does
+not record it twice; an import whose failure could not be written to its row
+is retried and can, rarely, record a second row.

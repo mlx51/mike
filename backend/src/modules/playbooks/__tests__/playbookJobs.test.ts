@@ -1,8 +1,9 @@
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { completeText, getUserApiKeys, storage } = vi.hoisted(() => ({
+const { completeText, getUserApiKeys, recordAudit, storage } = vi.hoisted(() => ({
   completeText: vi.fn(),
+  recordAudit: vi.fn(),
   getUserApiKeys: vi.fn(),
   storage: {
     deleteFile: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("../../../lib/llm", async (original) => ({
   completeText,
 }));
 vi.mock("../../user/user.service", () => ({ getUserApiKeys }));
+vi.mock("../../../lib/audit", () => ({ recordAudit }));
 vi.mock("../../../lib/storage", async (original) => ({
   ...(await original<typeof import("../../../lib/storage")>()),
   ...storage,
@@ -126,7 +128,14 @@ beforeEach(() => {
   completeText.mockResolvedValue(reviewed("Reviewed"));
   storage.deleteFile.mockResolvedValue(undefined);
   storage.uploadFile.mockResolvedValue(undefined);
+  recordAudit.mockResolvedValue(undefined);
 });
+
+/** The audit rows recorded for one action. */
+const audited = (action: string) =>
+  recordAudit.mock.calls
+    .map(([, event]) => event)
+    .filter((event) => event.action === action);
 afterEach(() => vi.unstubAllEnvs());
 
 describe("queueing a playbook review", () => {
@@ -192,6 +201,48 @@ describe("the playbook.review job", () => {
     });
   });
 
+  it("records the completed review in the audit log with its outcome counts", async () => {
+    const { db, tables } = database([book()]);
+    tables.playbook_runs.push(runRow({ document_id: "doc-1" }));
+    completeText.mockResolvedValue(
+      JSON.stringify({
+        summary: "Reviewed",
+        findings: [
+          {
+            ruleId: "cap",
+            ruleName: "Snapshot cap rule",
+            status: "unacceptable",
+            quote: "",
+            analysis: "Uncapped liability.",
+          },
+        ],
+      }),
+    );
+
+    await handlePlaybookReview(db, job("playbook.review", reviewPayload));
+
+    expect(audited("playbook.run")).toEqual([
+      expect.objectContaining({
+        userId: "owner",
+        status: "completed",
+        surface: "playbooks",
+        model: MODEL,
+        documentId: "doc-1",
+        detail: {
+          playbook_id: "book",
+          run_id: "run-1",
+          scope: "full",
+          posture: "strict",
+          outcomes: { unacceptable: 1 },
+        },
+      }),
+    ]);
+    // Counts only: what the finding said stays out of the audit row.
+    expect(JSON.stringify(recordAudit.mock.calls)).not.toContain(
+      "Uncapped liability",
+    );
+  });
+
   it("does nothing for a run that already finished", async () => {
     const { db, tables } = database([book()]);
     tables.playbook_runs.push(runRow({ status: "completed", summary: "Done" }));
@@ -220,6 +271,8 @@ describe("the playbook.review job", () => {
     await handlePlaybookReview(db, job("playbook.review", reviewPayload));
 
     expect(tables.playbook_runs[0]).toMatchObject({ summary: "First claim" });
+    // The claim that recorded the outcome audits it; this one does not.
+    expect(audited("playbook.run")).toEqual([]);
   });
 
   it("defers a re-claimed job while an earlier claim still heartbeats the run", async () => {
@@ -250,6 +303,13 @@ describe("the playbook.review job", () => {
       status: "failed",
       error: "The review failed. Try again.",
     });
+    expect(audited("playbook.run")).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        surface: "playbooks",
+        detail: expect.objectContaining({ run_id: "run-1" }),
+      }),
+    ]);
   });
 });
 
@@ -340,6 +400,56 @@ describe("the playbook.import job", () => {
       playbook_id: "new-book",
     });
     expect(storage.deleteFile).toHaveBeenCalledWith(STAGED_KEY);
+    expect(audited("playbook.imported")).toEqual([
+      expect.objectContaining({
+        status: "completed",
+        surface: "playbooks",
+        title: "Standards",
+        detail: { import_id: "imp-1", playbook_id: "new-book" },
+      }),
+    ]);
+  });
+
+  it("records a replacement as playbook.replaced", async () => {
+    const { db, tables } = database([book()]);
+    tables.playbook_imports = [importRow({ playbook_id: "book" })];
+    storage.downloadFile.mockResolvedValue(await sourceDocx());
+    completeText.mockResolvedValue(compiled("Guide v2"));
+
+    await handlePlaybookImport(
+      db,
+      job("playbook.import", { ...importPayload, replacePlaybookId: "book" }),
+    );
+
+    expect(tables.playbook_imports[0]).toMatchObject({ status: "completed" });
+    expect(audited("playbook.replaced")).toEqual([
+      expect.objectContaining({
+        status: "completed",
+        surface: "playbooks",
+        detail: { import_id: "imp-1", playbook_id: "book" },
+      }),
+    ]);
+    expect(audited("playbook.imported")).toEqual([]);
+  });
+
+  it("records a failed import with the stage it stopped at", async () => {
+    const { db, tables } = database([]);
+    tables.playbook_imports = [importRow()];
+    storage.downloadFile.mockResolvedValue(null);
+
+    await handlePlaybookImport(db, job("playbook.import", importPayload));
+
+    expect(tables.playbook_imports[0]).toMatchObject({ status: "failed" });
+    expect(audited("playbook.imported")).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        surface: "playbooks",
+        detail: expect.objectContaining({
+          import_id: "imp-1",
+          stage: "validating_file",
+        }),
+      }),
+    ]);
   });
 });
 
@@ -479,5 +589,18 @@ describe("a playbook job that runs out of attempts", () => {
     });
     // Nothing will read the staged upload again.
     expect(storage.deleteFile).toHaveBeenCalledWith(STAGED_KEY);
+    // Only the rows this hook failed are audited, each once.
+    expect(audited("playbook.run")).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        detail: expect.objectContaining({ run_id: "run-1" }),
+      }),
+    ]);
+    expect(audited("playbook.imported")).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        detail: expect.objectContaining({ stage: "checking_model" }),
+      }),
+    ]);
   });
 });
