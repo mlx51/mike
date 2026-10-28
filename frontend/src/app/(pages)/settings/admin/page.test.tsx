@@ -43,7 +43,6 @@ const flag = (
     key,
     label,
     description: `${label} description`,
-    group: "Google",
     codeDefault: true,
     deploymentDefault: null,
     effectiveDefault: true,
@@ -84,6 +83,23 @@ describe("AdminPage", () => {
             "Only administrators of this Mike server can open this page.",
         );
         expect(getAdminFeatureFlags).not.toHaveBeenCalled();
+    });
+
+    it("reports a failed load in place and loads both sections on Retry", async () => {
+        vi.mocked(getAdminFeatureFlags)
+            .mockRejectedValueOnce(new Error("boom"))
+            .mockResolvedValueOnce({ flags: FLAGS });
+        const user = userEvent.setup();
+        render(<AdminPage />);
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+            "Could not load the feature flags.",
+        );
+        // The override section needs the same list, so it waits too.
+        expect(screen.queryByRole("region", { name: "User overrides" })).toBeNull();
+        await user.click(screen.getByRole("button", { name: "Retry" }));
+        await screen.findByRole("switch", { name: "Google Drive default" });
+        expect(getAdminFeatureFlags).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole("region", { name: "User overrides" })).toBeInTheDocument();
     });
 
     it("shows each flag's default with where it comes from and saves a new default", async () => {

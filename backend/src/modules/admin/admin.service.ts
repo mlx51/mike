@@ -20,7 +20,11 @@ import {
   setUserFeatureFlag,
   type FeatureFlagKey,
 } from "../../lib/featureFlags";
-import { findProfileUserByEmail, normalizeEmail } from "../../lib/userLookup";
+import {
+  findProfileUserByEmail,
+  findProfileUserById,
+  normalizeEmail,
+} from "../../lib/userLookup";
 import {
   failure,
   internalFailure,
@@ -46,7 +50,6 @@ function summaries(
       key,
       label: definition.label,
       description: definition.description,
-      group: definition.group,
       codeDefault,
       deploymentDefault,
       effectiveDefault: deploymentDefault ?? codeDefault,
@@ -148,25 +151,4 @@ export async function updateUserFeatureFlag(
   } catch (error) {
     return internalFailure(error);
   }
-}
-
-async function findProfileUserById(
-  db: Db,
-  userId: string,
-): Promise<{ id: string; email: string; display_name: string | null } | null> {
-  const { data, error } = await db
-    .from("user_profiles")
-    .select("user_id, email, display_name")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  return {
-    id: data.user_id as string,
-    email: normalizeEmail(data.email),
-    display_name:
-      typeof data.display_name === "string" && data.display_name.trim()
-        ? data.display_name.trim()
-        : null,
-  };
 }

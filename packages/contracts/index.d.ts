@@ -636,8 +636,6 @@ export interface FeatureFlagSummary {
     key: FeatureFlagKey;
     label: string;
     description: string;
-    /** Flags shown together in the admin panel. */
-    group: string;
     /** What applies when no admin default is set; may read server configuration. */
     codeDefault: boolean;
     /** Set by an admin for the whole deployment; null means the code default applies. */

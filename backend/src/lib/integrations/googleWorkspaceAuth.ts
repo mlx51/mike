@@ -48,24 +48,17 @@ export class GoogleWorkspaceError extends Error {}
 /** This service (or its write bundle) is not offered to this user: see ./googleAccess. */
 export class GoogleWorkspaceUnavailableError extends GoogleWorkspaceError {}
 /**
- * What this user may do with the service, from their feature flags
- * (./googleAccess). `read` false means the service is not offered to them at
- * all; `write` false means its write scope is never requested and its write
- * tools are never offered, even over a grant that carries the scope.
+ * Refuses a service the user's feature flags do not offer (./googleAccess)
+ * and otherwise answers what they may do with it: `write` false means its
+ * write scope is never requested and its write tools are never offered, even
+ * over a grant that carries the scope.
  */
-export function workspaceProviderAccess(
-  db: Db,
-  userId: string,
-  provider: GoogleProvider,
-): Promise<GoogleServiceAccess> {
-  return googleServiceAccess(db, userId, provider);
-}
 export async function assertWorkspaceProviderAvailable(
   db: Db,
   userId: string,
   provider: GoogleProvider,
 ): Promise<GoogleServiceAccess> {
-  const access = await workspaceProviderAccess(db, userId, provider);
+  const access = await googleServiceAccess(db, userId, provider);
   if (!access.read)
     throw new GoogleWorkspaceUnavailableError(
       googleServiceUnavailableMessage(provider),
@@ -203,7 +196,7 @@ export async function workspaceStatus(
 ): Promise<Omit<GoogleWorkspaceStatus, "redirectUri" | "tools">> {
   const env = googleWorkspaceEnv();
   const configured = !!(env.clientId && env.clientSecret);
-  const access = await workspaceProviderAccess(db, owner.userId, provider);
+  const access = await googleServiceAccess(db, owner.userId, provider);
   try {
     const row = await loadWorkspaceGrant(db, owner, provider);
     const { error } = await db

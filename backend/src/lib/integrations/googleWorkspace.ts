@@ -18,7 +18,7 @@ import {
   assertWorkspaceProviderAvailable,
   assertWorkspaceWriteAvailable,
 } from "./googleWorkspaceAuth";
-import { googleAccessMap } from "./googleAccess";
+import { googleAccessMap, type GoogleAccessMap } from "./googleAccess";
 import {
   WORKSPACE_TOOLS,
   GoogleApiError,
@@ -80,7 +80,7 @@ export async function buildGoogleWorkspaceTools(
 ): Promise<unknown[]> {
   const tools: unknown[] = [];
   // One flag read for both services: what this user may do with each.
-  let access: Awaited<ReturnType<typeof googleAccessMap>>;
+  let access: GoogleAccessMap;
   try {
     access = await googleAccessMap(db, owner.userId);
   } catch (error) {

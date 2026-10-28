@@ -9275,20 +9275,8 @@ $$;
 revoke all on function public.list_org_departure_work(uuid,uuid,integer) from public,anon,authenticated;
 grant execute on function public.list_org_departure_work(uuid,uuid,integer) to service_role;
 
--- ---------------------------------------------------------------------------
--- Migration ledger (backend/migrations/20261009_03_schema_migrations.sql)
--- ---------------------------------------------------------------------------
--- One row per file in backend/migrations/ that this database has applied;
--- backend/scripts/migrate.sh reads it to find pending migrations. A fresh
--- install already contains every migration below, so it records them all,
--- without checksums because none was run as a file.
---
--- Adding a migration? Add its filename to this list in the same change:
--- backend/src/__tests__/migrationLedger.test.ts fails until you do, and a
--- missing name makes every fresh install re-run that migration on its first
--- `migrate.sh up`.
 -- Feature flags: deployment defaults and per-user overrides of the flags
--- listed in backend/src/lib/featureFlags.ts (20261027_01). Service role only;
+-- listed in backend/src/lib/featureFlags.ts (20261028_01). Service role only;
 -- MIKE_ADMIN_EMAILS decides who may change them.
 create table if not exists public.feature_flag_defaults (
   flag text primary key,
@@ -9309,6 +9297,18 @@ alter table public.user_feature_flags enable row level security;
 revoke all on public.feature_flag_defaults, public.user_feature_flags from public, anon, authenticated;
 grant select, insert, update, delete on public.feature_flag_defaults, public.user_feature_flags to service_role;
 
+-- ---------------------------------------------------------------------------
+-- Migration ledger (backend/migrations/20261009_03_schema_migrations.sql)
+-- ---------------------------------------------------------------------------
+-- One row per file in backend/migrations/ that this database has applied;
+-- backend/scripts/migrate.sh reads it to find pending migrations. A fresh
+-- install already contains every migration below, so it records them all,
+-- without checksums because none was run as a file.
+--
+-- Adding a migration? Add its filename to this list in the same change:
+-- backend/src/__tests__/migrationLedger.test.ts fails until you do, and a
+-- missing name makes every fresh install re-run that migration on its first
+-- `migrate.sh up`.
 create table if not exists public.schema_migrations (
   filename text primary key,
   checksum text,

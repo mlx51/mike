@@ -18,14 +18,11 @@
 // HTTP. The admin module and the Google integrations call it.
 
 import type { Db } from "./supabase";
-import { safeError } from "./safeError";
 import { disabledGoogleServices } from "./integrations/googleAvailability";
 
 export type FeatureFlagDefinition = {
   label: string;
   description: string;
-  /** Flags shown together in the admin panel. */
-  group: string;
   /** What applies when neither an admin default nor a user override exists. */
   codeDefault: () => boolean;
 };
@@ -38,35 +35,30 @@ export const FEATURE_FLAGS = {
     label: "Google Drive",
     description:
       "Connect Google Drive and use the files added through the Google Picker (drive.file).",
-    group: "Google",
     codeDefault: googleOn("google-drive"),
   },
   "gmail-read": {
     label: "Gmail: read",
     description:
       "Connect Gmail and search, read and list mail and drafts (gmail.readonly).",
-    group: "Google",
     codeDefault: googleOn("gmail"),
   },
   "gmail-write": {
     label: "Gmail: send and drafts",
     description:
       "Also send new email and create, replace or delete drafts (gmail.compose). Needs Gmail: read.",
-    group: "Google",
     codeDefault: googleOn("gmail"),
   },
   "google-calendar-read": {
     label: "Google Calendar: read",
     description:
       "Connect Google Calendar and list calendars and events (calendar.calendarlist.readonly, calendar.events.readonly).",
-    group: "Google",
     codeDefault: googleOn("google-calendar"),
   },
   "google-calendar-write": {
     label: "Google Calendar: change events",
     description:
       "Also create, change and delete events (calendar.events). Needs Google Calendar: read.",
-    group: "Google",
     codeDefault: googleOn("google-calendar"),
   },
 } as const satisfies Record<string, FeatureFlagDefinition>;
@@ -92,49 +84,40 @@ export type ResolvedFeatureFlags = Record<FeatureFlagKey, FeatureFlagState>;
 
 // A deployment whose database predates the flag tables keeps behaving as
 // before: every layer above the code default is empty. The tables are
-// created by backend/migrations/20261027_01_feature_flags.sql.
+// created by backend/migrations/20261028_01_feature_flags.sql.
 function isMissingTableError(error: unknown): boolean {
   const code = (error as { code?: unknown })?.code;
   return code === "PGRST205" || code === "42P01";
 }
 
 type FlagRow = { flag: string; enabled: boolean };
+type FlagMap = Partial<Record<FeatureFlagKey, boolean>>;
 
-function toMap(rows: FlagRow[] | null | undefined): Partial<Record<FeatureFlagKey, boolean>> {
-  const map: Partial<Record<FeatureFlagKey, boolean>> = {};
-  for (const row of rows ?? [])
+/** Rows of one flag table as a map keyed by flag; rows for retired flags are ignored. */
+async function loadFlagMap(
+  query: PromiseLike<{ data: FlagRow[] | null; error: unknown }>,
+): Promise<FlagMap> {
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingTableError(error)) return {};
+    throw error;
+  }
+  const map: FlagMap = {};
+  for (const row of data ?? [])
     if (isFeatureFlagKey(row.flag)) map[row.flag] = row.enabled === true;
   return map;
 }
 
 /** Deployment defaults an admin has set, keyed by flag. */
-export async function loadFeatureFlagDefaults(
-  db: Db,
-): Promise<Partial<Record<FeatureFlagKey, boolean>>> {
-  const { data, error } = await db
-    .from("feature_flag_defaults")
-    .select("flag, enabled");
-  if (error) {
-    if (isMissingTableError(error)) return {};
-    throw error;
-  }
-  return toMap(data as FlagRow[] | null);
+export function loadFeatureFlagDefaults(db: Db): Promise<FlagMap> {
+  return loadFlagMap(db.from("feature_flag_defaults").select("flag, enabled"));
 }
 
 /** Overrides an admin has set for one user, keyed by flag. */
-export async function loadUserFeatureFlagOverrides(
-  db: Db,
-  userId: string,
-): Promise<Partial<Record<FeatureFlagKey, boolean>>> {
-  const { data, error } = await db
-    .from("user_feature_flags")
-    .select("flag, enabled")
-    .eq("user_id", userId);
-  if (error) {
-    if (isMissingTableError(error)) return {};
-    throw error;
-  }
-  return toMap(data as FlagRow[] | null);
+export function loadUserFeatureFlagOverrides(db: Db, userId: string): Promise<FlagMap> {
+  return loadFlagMap(
+    db.from("user_feature_flags").select("flag, enabled").eq("user_id", userId),
+  );
 }
 
 /** Every flag's state for one user: override, then deployment default, then code default. */
@@ -159,14 +142,6 @@ export async function resolveFeatureFlags(
     };
   }
   return resolved;
-}
-
-export async function isFeatureEnabled(
-  db: Db,
-  userId: string,
-  key: FeatureFlagKey,
-): Promise<boolean> {
-  return (await resolveFeatureFlags(db, userId))[key].enabled;
 }
 
 /**
@@ -220,9 +195,4 @@ export async function setUserFeatureFlag(
           { onConflict: "user_id,flag" },
         );
   if (error) throw error;
-}
-
-/** Logged, never thrown: a flag read that fails must not take a request down with the raw error. */
-export function reportFeatureFlagError(context: string, error: unknown): void {
-  console.error(`[feature-flags] ${context}`, safeError(error));
 }

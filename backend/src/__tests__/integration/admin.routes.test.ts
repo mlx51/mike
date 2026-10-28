@@ -144,7 +144,6 @@ describe("admin routes", () => {
     ]);
     expect(listed.body.flags.find((f: { key: string }) => f.key === "gmail-read")).toMatchObject({
       label: "Gmail: read",
-      group: "Google",
       codeDefault: false,
       deploymentDefault: null,
       effectiveDefault: false,

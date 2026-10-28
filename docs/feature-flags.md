@@ -29,7 +29,7 @@ Three layers, the most specific one winning:
    configuration.
 
 A user with no row in either table gets the code default, so a database
-upgraded by `backend/migrations/20261027_01_feature_flags.sql` behaves exactly
+upgraded by `backend/migrations/20261028_01_feature_flags.sql` behaves exactly
 as before until an admin changes something. The registry of flags lives in
 `backend/src/lib/featureFlags.ts`; a key that is not in it cannot be stored.
 Both tables are service-role only: a browser session never reads or writes
@@ -97,6 +97,37 @@ All routes need a signed-in instance admin.
 Add an entry to `FEATURE_FLAGS` in `backend/src/lib/featureFlags.ts` (label,
 description, group, code default) and to `FeatureFlagKey` in
 `packages/contracts/index.d.ts`, then read it where the feature is decided
-with `resolveFeatureFlags(db, userId)` or `isFeatureEnabled`. The admin panel
-lists it automatically. Keep the decision in one place per feature, as
+with `resolveFeatureFlags(db, userId)`. The admin panel lists it
+automatically. Keep the decision in one place per feature, as
 `backend/src/lib/integrations/googleAccess.ts` does for Google.
+
+## Edge cases
+
+- **A write flag on while its read flag is off counts as off.** Mike cannot
+  request a write scope without the reads it builds on, so `gmail-write` and
+  `google-calendar-write` apply only while the matching read flag is on.
+- **Turning a write flag off does not revoke anything at Google.** An older
+  grant keeps its write scope in the stored token; Mike stops requesting and
+  using it. The user, or a Workspace admin, revokes it at Google.
+- **Turning a write flag back on does not add the scope to an existing
+  grant.** A user who connected while the flag was off holds a read-only
+  grant (`writeEnabled: false`); the write tools return only after they
+  connect again, as they would after unticking the permission on Google's
+  consent screen.
+- **Turning a read flag off keeps the connection.** It is listed under
+  Installed with `available: false` so the user can delete it; no tool is
+  offered and direct calls are refused. Turning the flag back on restores it.
+- **Nothing is cached.** A change in the panel applies to the user's next
+  request. Flag resolution costs two small reads per status call and per
+  chat turn's tool discovery.
+- **A database without the flag tables keeps every code default.** The
+  missing-table error is treated as "no admin decisions yet"; any other
+  database error fails the request as usual.
+- **Rows for a flag the code no longer defines are ignored**, so removing a
+  flag from the registry needs no data migration. Deleting a user removes
+  their overrides; deleting an admin keeps the rows they set, with
+  `updated_by` cleared.
+- **Only confirmed addresses count as admins.** An unconfirmed account has no
+  email in the session, so signing up with an admin's address before they do
+  grants nothing. An admin whose address leaves `MIKE_ADMIN_EMAILS` loses the
+  panel at the next request; rows they set stay in force.

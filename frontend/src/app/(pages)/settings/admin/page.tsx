@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type {
-  AdminFeatureFlagsResponse,
   AdminUserFeatureFlags,
   FeatureFlagKey,
   FeatureFlagSummary,
@@ -51,29 +50,15 @@ export default function AdminPage() {
         Only administrators of this Mike server can open this page.
       </p>
     );
-  return (
-    <div className="space-y-8">
-      <DeploymentDefaults />
-      <UserOverrides />
-    </div>
-  );
+  return <FeatureFlagsAdmin />;
 }
 
-/** "Server configuration" vs "Set here", so an admin sees where a default comes from. */
-function defaultSource(flag: FeatureFlagSummary): string {
-  return flag.deploymentDefault === null
-    ? `Default from server configuration: ${flag.codeDefault ? "on" : "off"}.`
-    : `Set here; server configuration says ${flag.codeDefault ? "on" : "off"}.`;
-}
-
-function DeploymentDefaults() {
+function FeatureFlagsAdmin() {
+  // One list serves both sections: labels and the current defaults, so a
+  // default changed above is what the override rows below describe.
   const [flags, setFlags] = useState<FeatureFlagSummary[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
-  const [busyKey, setBusyKey] = useState<FeatureFlagKey | null>(null);
-  // Only the newest change may settle the list; a slower earlier save that
-  // resolves late must not overwrite it.
-  const requestRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,14 +74,52 @@ function DeploymentDefaults() {
     };
   }, [loadVersion]);
 
+  return (
+    <div className="space-y-8">
+      <DeploymentDefaults
+        flags={flags}
+        loadError={loadError}
+        onRetry={() => {
+          setLoadError(false);
+          setLoadVersion((current) => current + 1);
+        }}
+        onSaved={setFlags}
+      />
+      {flags && <UserOverrides flags={flags} />}
+    </div>
+  );
+}
+
+/** "Server configuration" vs "Set here", so an admin sees where a default comes from. */
+function defaultSource(flag: FeatureFlagSummary): string {
+  return flag.deploymentDefault === null
+    ? `Default from server configuration: ${flag.codeDefault ? "on" : "off"}.`
+    : `Set here; server configuration says ${flag.codeDefault ? "on" : "off"}.`;
+}
+
+function DeploymentDefaults({
+  flags,
+  loadError,
+  onRetry,
+  onSaved,
+}: {
+  flags: FeatureFlagSummary[] | null;
+  loadError: boolean;
+  onRetry: () => void;
+  onSaved: (flags: FeatureFlagSummary[]) => void;
+}) {
+  const [busyKey, setBusyKey] = useState<FeatureFlagKey | null>(null);
+  // Only the newest change may settle the list; a slower earlier save that
+  // resolves late must not overwrite it.
+  const requestRef = useRef(0);
+
   const save = useCallback(
     async (key: FeatureFlagKey, enabled: boolean | null) => {
       const request = ++requestRef.current;
       setBusyKey(key);
       try {
-        const saved: AdminFeatureFlagsResponse =
-          await setAdminFeatureFlagDefault(key, enabled);
-        if (request === requestRef.current) setFlags(saved.flags);
+        const saved = await setAdminFeatureFlagDefault(key, enabled);
+        if (request === requestRef.current) onSaved(saved.flags);
       } catch (error) {
         notifyError(error, {
           action: "change the feature flag default",
@@ -106,7 +129,7 @@ function DeploymentDefaults() {
         if (request === requestRef.current) setBusyKey(null);
       }
     },
-    [],
+    [onSaved],
   );
 
   return (
@@ -122,14 +145,7 @@ function DeploymentDefaults() {
             <p className="text-sm text-red-600" role="alert">
               Could not load the feature flags.
             </p>
-            <PillButtonUI
-              tone="white"
-              size="sm"
-              onClick={() => {
-                setLoadError(false);
-                setLoadVersion((current) => current + 1);
-              }}
-            >
+            <PillButtonUI tone="white" size="sm" onClick={onRetry}>
               Retry
             </PillButtonUI>
           </SettingsRow>
@@ -207,31 +223,13 @@ function overrideValue(choice: string): boolean | null {
   return choice === "default" ? null : choice === "on";
 }
 
-function UserOverrides() {
+function UserOverrides({ flags }: { flags: FeatureFlagSummary[] }) {
   const [email, setEmail] = useState("");
   const [lookingUp, setLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [user, setUser] = useState<AdminUserFeatureFlags | null>(null);
-  const [definitions, setDefinitions] = useState<FeatureFlagSummary[] | null>(
-    null,
-  );
   const [busyKey, setBusyKey] = useState<FeatureFlagKey | null>(null);
   const requestRef = useRef(0);
-
-  // Labels and descriptions come from the same list the defaults use.
-  useEffect(() => {
-    let cancelled = false;
-    getAdminFeatureFlags()
-      .then((loaded) => {
-        if (!cancelled) setDefinitions(loaded.flags);
-      })
-      .catch(() => {
-        /* The defaults section reports this; the rows fall back to keys. */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const lookUp = async (event: FormEvent) => {
     event.preventDefault();
@@ -277,9 +275,6 @@ function UserOverrides() {
     },
     [],
   );
-
-  const definitionFor = (key: FeatureFlagKey) =>
-    definitions?.find((flag) => flag.key === key);
 
   return (
     <section className="space-y-3" aria-labelledby="feature-flag-overrides">
@@ -332,17 +327,10 @@ function UserOverrides() {
                 )}
               </div>
             </SettingsRow>
-            {user.flags.map((flag) => {
-              const definition = definitionFor(flag.key);
-              const defaultLabel = definition
-                ? definition.effectiveDefault
-                  ? "on"
-                  : "off"
-                : flag.override === null
-                  ? flag.enabled
-                    ? "on"
-                    : "off"
-                  : "unknown";
+            {flags.map((flag) => {
+              const state = user.flags.find((f) => f.key === flag.key);
+              if (!state) return null;
+              const defaultLabel = flag.effectiveDefault ? "on" : "off";
               const options: SettingsSelectOption[] = [
                 {
                   value: "default",
@@ -356,9 +344,9 @@ function UserOverrides() {
                 <SettingsSelectRow
                   key={flag.key}
                   id={`admin-flag-${flag.key}`}
-                  label={definition?.label ?? flag.key}
+                  label={flag.label}
                   options={options}
-                  value={busyKey === flag.key ? null : overrideChoice(flag.override)}
+                  value={busyKey === flag.key ? null : overrideChoice(state.override)}
                   onChange={(choice) =>
                     void save(user.userId, flag.key, overrideValue(choice))
                   }
