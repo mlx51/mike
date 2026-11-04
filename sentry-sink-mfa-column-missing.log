@@ -1,0 +1,2 @@
+[2026-11-04T19:23:49.995Z] project=1 level=warning AppError: Failure in http / auth.login_mfa_column_missing / 42703 @ backend/src/middleware/auth.ts:73
+    service=mike-backend role=api install=community diagnostics_version=2 component=http error_kind=auth.login_mfa_column_missing failure_code=42703 capture_source=exception occurrence=1
