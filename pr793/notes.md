@@ -101,3 +101,48 @@ Dev account `public.user_profiles` had `display_name` and `onboarding_version` N
 ## Cleanup
 
 Sink, proxy, every backend and `next dev` started for this stopped by PID (`pids.txt`); Chrome page closed; worktrees `gif793-main` and `gif793-pr` removed; `frontend/AGENTS.md` restored after each `next dev`.
+
+## 2026-11-05 (evening): round-two "after" clips on f1e8dffac
+
+Only the two "after" clips were re-recorded, on PR head **f1e8dffac** (round two: a2f4323ce gate + `operation=auth.session`, f1e8dffac keeps the session on a failed check). The "before" clips are unchanged. Same setup as above (worktree `~/dev/mike-wt/gif793-pr2`, node_modules cloned from feature-flags with identical lockfiles, same env overrides, sink :9793, fault proxy :54793, backend :4793, `next dev` :3793, isolated Chrome DevTools context, Resource Timing overlay). A freshly started backend was used for each take.
+
+| GIF | Ref | Length | Size |
+|---|---|---|---|
+| `pr793-after-v2.gif` | f1e8dffac | 25.3 s | 754 KB |
+| `pr793-after-navigate-v2.gif` | f1e8dffac | 41.4 s | 1.6 MB |
+
+### pr793-after-v2.gif (full page load during the outage): stays on the loader, recovers on its own; **1 event**
+The page loads /projects normally, then the fault is switched on and the page is fully loaded again (`navigate_page` to the same URL so the overlay init script is re-installed; a plain `reload` dropped the overlay in take 1). Result: the full-screen loader stays up with one "Couldn't check your session / The server is temporarily unreachable. Please try again shortly." toast (Retry, Contact support). There is no redirect to /login and no second warning. The overlay lists 5 × `/api/auth/session → 503` (the first check plus the 1 s / 2 s / 4 s backoff retries). The proxy logged 5 resets. The fault was turned off after about 7 s. With no click, the next backoff retry opened /projects about 9 s later without a new sign-in, and the toast cleared. Encoding cuts 6 s of the identical loader frames (trim 4–14 s and 20–37 s).
+```
+project=1 error  AuthRetryableFetchError: Failure in auth.session / http / auth.supabase_unavailable / GET / /auth/session / 503
+   operation=auth.session component=http http_status=503 http_method=GET http_route=/auth/session error_kind=auth.supabase_unavailable capture_source=exception occurrence=1
+   fingerprint=["upstream-unavailable","http",""]
+```
+No browser event. Backend log: `[upstream-unavailable] still failing (gotrue:0): 1 request(s) not re-reported since the last line; reported to Sentry 1s ago`, then `[upstream-unavailable] recovered (gotrue:0)`.
+Take 1 (`after-v2-take1-nooverlay.mp4`, not published) used the toast's Retry instead of waiting for the backoff. The page opened at once and the toast cleared. The sink showed the same single event.
+
+### pr793-after-navigate-v2.gif (in-app navigation): UI as before, **1 event instead of 5**; a second outage files one new event at once
+The fault is switched on with /projects loaded, then a click on the sidebar's "Matter 0001". The project page shows "Couldn't load this project / The server is temporarily unreachable…" with Retry. The sidebar shows "Could not load items. Retry". The user stays signed in. The overlay lists 5 × 503 (`/projects/:id` ×2, `/projects/:id/chats` ×2, `/tabular-review`), and the proxy logged 5 resets. The sink showed **one** event. The fault was then turned off and Retry clicked: the project's Documents view loads. Second outage in the same backend process: the fault goes on, then a click on "Matter 0002" gives the same notice and 5 more 503s, and **one** new event arrives at once (occurrence 2, 6 ms after the 503 was answered). The fault goes off, Retry is clicked, and Matter 0002 loads. Encoding cuts the idle holds (trim 3–23, 29–36, 40–49, 53–61.7 s).
+```
+23:23:58.416Z project=1 error  AuthRetryableFetchError: Failure in auth.session / http / auth.supabase_unavailable / GET / /projects/:id/chats / 503
+   operation=auth.session http_route=/projects/:id/chats occurrence=1 fingerprint=["upstream-unavailable","http",""]
+23:24:22.724Z project=1 error  AuthRetryableFetchError: Failure in auth.session / http / auth.supabase_unavailable / GET / /projects/:id/chats / 503
+   operation=auth.session http_route=/projects/:id/chats occurrence=2 fingerprint=["upstream-unavailable","http",""]   (second outage, after recovery)
+```
+No browser events. Backend log (fresh process):
+```
+[upstream-unavailable] still failing (gotrue:0): 1 request(s) not re-reported since the last line; reported to Sentry 1s ago
+[upstream-unavailable] recovered (gotrue:0)
+[upstream-unavailable] still failing (gotrue:0): 1 request(s) not re-reported since the last line; reported to Sentry 0s ago
+[upstream-unavailable] recovered (gotrue:0)
+```
+Raw rows: `after-v2-sink-events.jsonl`, `after-navigate-v2-sink-events.jsonl`. Logs: `v2-backend3.log` (reload take), `v2-backend4.log` (navigate take), `v2-proxy.log`.
+
+### Observations
+1. The "still failing" line counts only the suppressed requests since its own last line, and it is printed at most once a minute. Each outage had 4 suppressed requests, but the line says "1 request(s)" because it fires on the first repeat. The other 3 would be counted in a later line, which never printed because the outage ended within a minute. Expected from the design. The wording can read as "only 1 repeat".
+2. The event's `http_route` names whichever request tripped first (`/projects/:id/chats` here, not `/projects/:id`). This is as described in 793-round2.md.
+3. The Next.js dev-tools badge ("1 Issue") in the navigate clip is the dev-only overlay for the console line `[project assistant] failed to load MikeApiError: The server is temporarily unreachable`. It is not a Sentry event, and production builds do not show it.
+4. The overlay lost its init script on a `reload` (take 1). Take 2 used a full `navigate_page` to the same URL. For the app this is the same full page load.
+
+### Cleanup (v2)
+Sink 26999, proxy 27000, backends 27001 → 28867 → 30718 → 32902, and `next dev` 27002 were all stopped by PID. Ports 3793/4793/9793/54793 are free. The Chrome page is closed. Worktree `gif793-pr2` was removed. `frontend/AGENTS.md` was restored after `next dev`. The dev account's `display_name` / `onboarding_version` were set to 'Ada Lovelace' / 0 for the takes and are back to NULL.
