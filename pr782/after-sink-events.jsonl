@@ -1,0 +1,1 @@
+["1","development","Error: Failure in boot / manifest-key / signing_key_invalid",{"service":"mike-backend","role":"api","install":"community","build_mode":"development","diagnostics_version":"2","component":"boot","stage":"manifest-key","failure_code":"signing_key_invalid","capture_source":"exception","occurrence":1}]

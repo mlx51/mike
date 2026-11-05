@@ -1,0 +1,22 @@
+[sentry] enabled for api (environment development, release mike@0.0.0)
+Mike backend running on port 4782 (workers: none)
+[http/internal-error] {
+  requestId: '06adac69-d08f-4dd9-9991-e0b865d5d893',
+  method: 'GET',
+  path: '/observability/sentry-test',
+  error: Error: Sentry backend test error (SENTRY_ENABLE_TEST_ROUTE)
+      at <anonymous> (/Users/amalanandmuthukumaran/dev/mike-wt/gif782-pr/backend/src/app.ts:357:25)
+      at Layer.__apm$wrapped (/Users/amalanandmuthukumaran/dev/mike-wt/gif782-pr/backend/node_modules/router/lib/layer.js:98:21)
+      at __apm$traced (/Users/amalanandmuthukumaran/dev/mike-wt/gif782-pr/backend/node_modules/router/lib/layer.js:111:26)
+      at /Users/amalanandmuthukumaran/dev/mike-wt/gif782-pr/backend/node_modules/router/lib/layer.js:138:14
+      at run (node:diagnostics_channel:168:14)
+      at AsyncLocalStorage.run (node:internal/async_local_storage/async_hooks:80:14)
+      at node:diagnostics_channel:100:18
+      at Channel.runStores (node:diagnostics_channel:177:12)
+      at Layer.handleRequest (/Users/amalanandmuthukumaran/dev/mike-wt/gif782-pr/backend/node_modules/router/lib/layer.js:136:33)
+      at next (/Users/amalanandmuthukumaran/dev/mike-wt/gif782-pr/backend/node_modules/router/lib/route.js:157:13) {
+    code: 'sentry_test'
+  }
+}
+Shutting down gracefully (SIGTERM)
+Shutdown complete
