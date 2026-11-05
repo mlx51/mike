@@ -74,3 +74,33 @@ Raw sink rows: `before-sink-events.json`, `after-sink-events.json`; full sink ou
 ## Cleanup
 
 All processes I started were stopped by PID: the sink (52615), the two dry-run APIs (52664 tree, 53963 tree), and the recorded APIs (57168, 58344, plus their esbuild children via `pkill -P <pid>`). Nothing listens on :4778 or :9778. Worktrees `gif778-main` and `gif778-pr` removed.
+
+## 2026-11-05: pr778-after-v2.gif (round-two head a2b1a1c34)
+
+Re-recorded the after clip only; the before clip is unchanged. Same setup as above, on a fresh worktree `~/dev/mike-wt/gif778-pr` detached at a2b1a1c34. node_modules (root + backend) were cloned with `cp -cR` from `~/dev/mike-wt/algo`. No lockfile differs between e74b25d75, a2b1a1c34 and algo. backend/.env was built the same way. The sink is `~/dev/mike/scripts/sentry-sink.mjs` on :9778 (`sink-v2.log`).
+
+The only changes are file names, so the round-one evidence is not overwritten: `pr-v2.tape` (output `pr778-after-v2.mp4`, sources `setup-pr-v2.sh`) and `setup-pr-v2.sh` (log `pr778-pr-v2-api.log`, pid file `api778-pr-v2.pid`). Commands, waits and the ffmpeg line are identical.
+
+- `pr778-after-v2.gif`: a2b1a1c34, 22 s (recorded 26.5 s, 1.2x), 284 KB.
+
+At 10 s: 0 raw blocks, one `[queue] redis consumer error Error:ECONNREFUSED`, and the sink holds 1 event (the `queue.connection_lost` warning, same tags as round one).
+
+At 65 s:
+- **0 raw `Error: connect ECONNREFUSED` blocks**, compared with 14 in round one. There were still 0 when the process stopped.
+- The summary line now reads `[queue] redis still failing (Error:ECONNREFUSED): 84 consecutive failures, 83 not re-reported since the last line; next attempt in 0s`. Round one showed 73 at this point.
+- There is no `[stale-sweep] flipped` line; the 2 generating cells were left alone. The sweep logged `[stale-sweep] extraction job lookup failed { jobs: 2 ... [redis] extraction job lookup timed out after 5000ms }`.
+
+The sink held 3 events (`after-v2-sink-events.json`):
+```
+warning  Error: Failure in queue / connection / queue.connection_lost / ECONNREFUSED
+    role=worker-thread component=queue stage=connection error_kind=queue.connection_lost failure_code=ECONNREFUSED capture_source=exception occurrence=1
+error  Error: Failure in documents.extract / application / extraction.failed
+    role=worker-thread error_kind=extraction.failed capture_source=exception occurrence=1
+error  Error: Failure in maintenance.cells / stale-sweep / db.query_failed
+    role=worker-thread component=stale-sweep error_kind=db.query_failed capture_source=exception occurrence=1
+```
+- There is **no `maintenance.cells / application / ECONNREFUSED` console event**; round one had it at occurrence 1 and 2. There is still exactly one `queue.connection_lost`. As predicted, it carries no `queue` tag, because the consumer saw the outage first.
+- `stale-sweep / db.query_failed`, one per sweep: expected and out of scope.
+- **Unexpected and unrelated to #778: `documents.extract / application / extraction.failed`.** The stale sweep's `backfillDocumentText` ran in inline mode (`processDocumentTextInline`, active because `DB_JOBS_ENABLED=false`). It picked up a pending `document.extract_text` db_jobs row on the **shared** local database, `5b2e4b95-9f7d-46a5-8199-28524cd88879`. That row was created 22:31:28Z by another recorder, 77 s before this sweep. The PDF was unreadable (`document_text_pdf_unreadable`), so the API marked the job `failed` (`extraction_failed`, finished 22:32:45Z) and its `document_version_texts` row failed. The round-one run did not hit this because no pending text jobs existed then. The 65 s frame shows this event. I did not re-record, because a second run could take another recorder's job, and I did not reset the row. A future rerun on a shared DB should first check that `select count(*) from db_jobs where kind='document.extract_text' and status='pending'` is 0.
+
+Cleanup: the API (69858) was stopped by the tape's `pkill -P` / `kill`, and the sink (69605) by PID. Nothing listens on :4778 or :9778, and worktree `gif778-pr` was removed.
