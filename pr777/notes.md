@@ -82,3 +82,14 @@ All three events have the fingerprint `["{{ default }}","chat.turn","","","appli
 - `pr777-before.gif`, `pr777-after.gif`, and the unedited `pr777-before.mp4` and `pr777-after.mp4`.
 - `before.tape`, `after.tape`, `setup-main.sh`, `setup-pr.sh`, `helpers.sh`, `fault-proxy.mjs`, `provider-stub.mjs`, `dry.sh`, `dry2.sh`.
 - `before-sink-events.jsonl`, `after-sink-events.jsonl`, `sink.log`, `proxy.log`, `stub.log`, and the API logs `pr777-main-api.log` and `pr777-pr-api.log`.
+
+## Cleanup
+
+- Processes: everything I started was stopped by PID: the proxy, the stub, the sink, and each API (the tapes stop their API at the end). Nothing listens on :4777, :9777, :4177 or :54777. No Docker, compose or supabase commands were run, and no shared role or function was altered.
+- Throwaway user: removed.
+  - Its 19 chats and 38 messages were deleted.
+  - So were its auto-created personal organization d890420f-… (deleted before its membership, because of the last-owner trigger), its default workflow installations (5), workflows (5), quick actions (7), memory_files row and user_profiles row.
+  - Also deleted: the 19 `audit.chat_turn` `db_jobs` rows my turns enqueued (pending; `DB_JOBS_ENABLED=false`, so no runner of mine would have drained them).
+  - The GoTrue user was then deleted (admin DELETE 200).
+  - A scan of every `public` uuid column found 0 rows with its id, and `auth.users` and `db_jobs` have 0 rows for it.
+- The token and password files were deleted, and worktrees `gif777-main` and `gif777-pr` were removed.
