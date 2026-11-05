@@ -77,3 +77,26 @@ Both were set back to NULL in `public.user_profiles` afterwards.
 - On main the failed load swaps in the fallback profile, which counts as onboarded, so a user with unfinished onboarding (`onboarding_version` NULL) lands on `/settings` anyway. With the fix the real profile loads and the same user is redirected to onboarding step 1 ("Tell us about you", Name prefilled "Ada Lovelace"). This is correct behaviour, not a regression, but it means the bug on main also skipped onboarding. For the after-recording the account was marked legacy-exempt so `/settings` could be shown.
 - The composer button's description reads "API key missing for selected model" on both the degraded and the control load. No model was selected (`lastSelectedChatModel` null), so this is the empty-selection state, not key gating. The fail-open evidence is the Mistral AI group being listed only in the degraded case.
 - The console line on main is the same text as the comment, followed by a second warning `[user-error] Couldn't load your profile TypeError: ...`.
+
+## 2026-11-05: pr790-after-v2.gif (fixed PR head 36e9a0283), 43 s
+
+Re-recorded only the "after" clip after the review fixes (head 36e9a0283, was 024f64a72); `pr790-before.gif` is unchanged.
+Same harness as above with one difference: the earlier main/PR worktrees were gone, so the backend ran from the PR worktree `~/dev/mike-wt/gif790-v2` (the PR touches only `frontend/`, so the backend is the same as its merge base). node_modules cloned from `~/dev/mike-wt/algo` (all three lockfiles match). Same proxy (`strip-proxy.mjs`, STRIP on), sink :9999, backend :4790, proxy :4791, `next dev` :3790, dev account; `display_name` "Ada Lovelace" and `onboarding_version` 0 set for the clip and restored to NULL afterwards.
+Raw screencast `after-v2.mp4` (54 s); the GIF cuts two idle stretches (picker hold, settings hold) with trim+concat at 8 fps / 1280 px.
+
+1. Sink cleared. Reloads `/settings`: Display Name "Ada Lovelace", avatar "Ada Lovelace", no notice.
+2. Clicks Assistant: "Hi, Ada Lovelace". Opens the model picker: Anthropic, Google, OpenAI and **Mistral AI**; expands Mistral AI (Large 4 Preview, Medium 3.5, Small 4). Fail-open picker, as before.
+3. Sink page: **1 event**.
+4. Loads `/settings` again (a new page load): page identical, no notice.
+5. Sink page: **2 events**.
+
+Sink events (both project 2, the web app):
+
+```
+level=warning  Error: Failure in profile / missing_api_key_status @ _next/static/chunks/_1scz0d-a7wv9r._.js:2243
+  service=mike-frontend runtime=browser build_mode=development diagnostics_version=2 install=community component=profile error_kind=missing_api_key_status capture_source=exception occurrence=1
+```
+
+received 23:29:44.712Z (first reload) and 23:30:19.760Z (second load). The raw events carry only the tags, a one-frame stack and the fingerprint; no `extra`, `contexts`, user or request (no profile payload). Proxy log: one `[strip] GET /user/profile 200: removed apiKeyStatus` per load. Client-side navigation to Assistant did not file another event (once per page load).
+
+Before recording (not in the clip): the login page's profile load and the first `/settings` load filed one warning each, and an unrecorded reload filed one more; the sink was cleared after each. Unrelated backend noise at boot: 4 `AppError: Failure in audit.write / dbq / audit.write_failed / 23503` warnings (project 1) from queued `audit.chat_turn` jobs, cleared before recording. Full sink terminal log: `sink-terminal-v2.log`.
