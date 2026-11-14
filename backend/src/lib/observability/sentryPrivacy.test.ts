@@ -232,6 +232,15 @@ describe('bounded error diagnostics', () => {
     expect(diagnosticErrorTags({ message: 'TypeError: private request failed', details: 'Caused by: Error: private (private_code)\n', code: '' })).toEqual({});
   });
 
+  it('names the codes PostgREST and Postgres emit while the database restarts', () => {
+    // PGRST002/PGRST003: PostgREST cannot build its schema cache / get a pooled
+    // connection; 57P02: crash shutdown. Unlisted, MIKE-BACKEND-4C and 8N arrived blank.
+    for (const code of ['PGRST002', 'PGRST003', '57P02']) {
+      const wrapped = new Error('Dependency failure (non-Error value)', { cause: { code, message: 'x', details: '', hint: '' } });
+      expect(diagnosticErrorTags(wrapped)).toEqual({ failure_code: code });
+    }
+  });
+
   it('keeps storage status and known database codes, drops arbitrary codes and metadata', () => {
     const tags = diagnosticErrorTags({ name: 'AccessDenied', $metadata: { httpStatusCode: 403, requestId: 'private' } });
     expect(diagnosticEvent({ tags }).tags).toEqual({ failure_code: 'AccessDenied', dependency_status: 403 });
@@ -342,6 +351,38 @@ it('names a provider refusal by its protocol type and a fixed reason, never its 
   // Appended only when present: an event without them groups as before.
   expect(diagnosticEvent({ tags: { component: 'chat-stream', provider_error: 'api_call' } }).fingerprint).toHaveLength(14);
   expect(event.fingerprint).toEqual(expect.arrayContaining(['invalid_request_error', 'prompt_too_long']));
+});
+
+it('names a Vercel AI Gateway refusal by its type, preferring the upstream body over the class default', () => {
+  // @ai-sdk/gateway marks every error with this symbol and wraps the APICallError as its cause.
+  const gatewayError = (name: string, type: string, upstreamType: string) => ({
+    [Symbol.for('vercel.ai.gateway.error')]: true, name, type, statusCode: 403, message: 'PRIVATE_ gateway text',
+    cause: { name: 'AI_APICallError', statusCode: 403, message: 'PRIVATE_', data: { error: { type: upstreamType, message: 'PRIVATE_' } } },
+  });
+  const forbidden = { name: 'AssistantStreamError', cause: gatewayError('GatewayForbiddenError', 'forbidden', 'forbidden') };
+  expect(diagnosticErrorTags(forbidden)).toMatchObject({ provider_error_type: 'forbidden', dependency_status: 403 });
+  // An upstream type the gateway does not know is mapped to its internal_server_error class, keeping the 403.
+  expect(diagnosticErrorTags(gatewayError('GatewayInternalServerError', 'internal_server_error', 'PRIVATE_type')).provider_error_type).toBe('internal_server_error');
+  expect(diagnosticErrorTags(gatewayError('GatewayInternalServerError', 'internal_server_error', 'permission_error')).provider_error_type).toBe('permission_error');
+  const event = diagnosticEvent({ tags: { component: 'chat-stream', ...diagnosticErrorTags(forbidden) } });
+  expect(event.tags).toMatchObject({ provider_error_type: 'forbidden' });
+  expect(JSON.stringify(event)).not.toContain('PRIVATE_');
+});
+
+it('names an OpenRouter mandatory-reasoning 400 and an Anthropic credit-balance 400 by a fixed reason', () => {
+  const refusal = (message: string) => ({ name: 'AppError', cause: { name: 'AI_APICallError', statusCode: 400, message } });
+  expect(diagnosticErrorTags(refusal('[Google] Reasoning is mandatory for this endpoint and cannot be disabled.')).provider_reason).toBe('reasoning_required');
+  expect(diagnosticErrorTags(refusal('Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.')).provider_reason).toBe('credit_balance');
+  expect(diagnosticErrorTags(refusal('reasoning effort must be one of low, medium, high')).provider_reason).toBeUndefined();
+  expect(diagnosticErrorTags(refusal('Your credit card was declined')).provider_reason).toBeUndefined();
+  const event = diagnosticEvent({ tags: diagnosticErrorTags(refusal('Your credit balance is too low PRIVATE_')) });
+  expect(event.tags).toMatchObject({ provider_reason: 'credit_balance' });
+  expect(JSON.stringify(event)).not.toContain('PRIVATE_');
+});
+
+it('keeps only a registry adapter id as the provider tag', () => {
+  expect(diagnosticEvent({ tags: { provider: 'azure-foundry' } }).tags).toEqual({ provider: 'azure-foundry' });
+  expect(diagnosticEvent({ tags: { provider: 'https://llm.private.example/v1' } }).tags).toEqual({});
 });
 
 it('allows only bounded network context and known model endpoints', () => {
