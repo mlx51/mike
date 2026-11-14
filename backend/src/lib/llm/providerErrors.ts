@@ -156,7 +156,7 @@ export function providerFailureStatus(error: unknown): number | null {
   return findApiCallError(error)?.statusCode ?? null;
 }
 
-const NETWORK_FAILURE_CODES = new Set([
+export const NETWORK_FAILURE_CODES: ReadonlySet<string> = new Set([
   "ECONNREFUSED",
   "ECONNRESET",
   "ETIMEDOUT",
@@ -239,6 +239,18 @@ export function isUserProviderRefusal(error: unknown): boolean {
   const kind = providerFailureKind(error);
   return providerKeySource(error) === "user" &&
     (kind === "chat.provider_rejected" || kind === "chat.provider_out_of_credits");
+}
+
+/**
+ * A provider answer a retry cannot change: a refused key, model or account,
+ * or another 4xx. A timeout (408) and a rate limit (429) can clear, unless
+ * the 429 is the provider's explicit quota verdict.
+ */
+export function isDeterministicProviderRefusal(error: unknown): boolean {
+  const kind = providerFailureKind(error);
+  if (kind === "chat.provider_rejected" || kind === "chat.provider_out_of_credits") return true;
+  const status = providerFailureStatus(error);
+  return status !== null && status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
 /** Unknown ownership and shared credential failures remain actionable errors. */
